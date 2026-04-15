@@ -1,7 +1,7 @@
 /**
  * @NApiVersion 2.1
  */
-define(["N/search"], (search) => {
+define(["N/search", "N/log"], (search, log) => {
   /** Parsing 관련 유틸리티 함수 모음 START */
 
   /**
@@ -239,11 +239,15 @@ define(["N/search"], (search) => {
       return null;
     }
 
+    const safeContents = contents.replace(
+      /[^\x00-\x7F]/g,
+      (ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"),
+    );
+
     const errorFile = fileModule.create({
-      name: `${errorPrefix}${stagingFileId}.csv`,
-      fileType: fileModule.Type.CSV,
-      contents: contents,
-      encoding: fileModule.Encoding.UTF8,
+      name: `${errorPrefix}${stagingFileId}.txt`,
+      fileType: fileModule.Type.PLAINTEXT,
+      contents: safeContents,
       folder: folderId,
     });
 

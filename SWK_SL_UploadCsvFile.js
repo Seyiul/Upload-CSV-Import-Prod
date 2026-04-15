@@ -16,8 +16,9 @@ define([
   "N/task",
   "N/search",
   "N/redirect",
+  "N/url",
   "./SWK_Utils_UploadCsvFiles",
-], (serverWidget, log, file, task, search, redirect, csvUtils) => {
+], (serverWidget, log, file, task, search, redirect, url, csvUtils) => {
   // 템플릿 파일 ID 매핑
   const TEMPLATE_FILE_IDS = {
     PO: 16682,
@@ -49,6 +50,7 @@ define([
     taskId,
     stagingFileId,
     errorFileUrl,
+    errorFileId,
   ) => {
     const form = serverWidget.createForm({
       title: "Upload CSV File",
@@ -206,14 +208,22 @@ define([
       container: "custpage_group_upload_status",
     });
 
+    const suiteletUrl = url.resolveScript({
+      scriptId: "customscript_swk_sl_uploadcsvfile",
+      deploymentId: "customdeploy_swk_sl_uploadcsvfile",
+      params: {
+        action: "downloaderrorcsv",
+        errorFileId: errorFileId || "",
+      },
+    });
     if (statusTitle && statusMessage) {
       statusField.defaultValue = `
         <div id="swk-status-panel" style="margin-top:12px;border:1px solid #dbe4f0;border-radius:14px;background:#ffffff;padding:18px 20px;box-shadow:0 8px 24px rgba(15,23,42,0.06);">
           <div style="font-size:18px;font-weight:600;color:#0f172a;margin-bottom:8px;">${csvUtils.escapeHtml(statusTitle)}</div>
           <div style="font-size:14px;line-height:1.6;color:#475569;white-space:pre-wrap;">${csvUtils.escapeHtml(statusMessage)}</div>
           ${
-            errorFileUrl
-              ? `<div style="margin-top:14px;"><a href="${csvUtils.escapeHtml(errorFileUrl)}" target="_blank" style="color:#1d4ed8;font-weight:600;text-decoration:none;">Download Error CSV</a></div>`
+            errorFileId
+              ? `<div style="margin-top:14px;"><a href="${suiteletUrl}" style="color:#1d4ed8;font-weight:600;text-decoration:none;">Download Error CSV</a></div>`
               : ""
           }
         </div>
@@ -230,6 +240,23 @@ define([
 
     form.clientScriptModulePath = "./SWK_CS_UploadCsvFile.js";
     return form;
+  };
+
+  // CSV 파일 다운로드 응답 설정 함수 - 오류 보고서 다운로드 등에 사용
+  const downloadErrorCsv = (response, contents, filename) => {
+    response.setHeader({
+      name: "Content-Type",
+      value: "text/csv; charset=UTF-8",
+    });
+
+    response.setHeader({
+      name: "Content-Disposition",
+      value: `attachment; filename="${filename}"`,
+    });
+
+    response.write({
+      output: `\uFEFF${contents}`,
+    });
   };
 
   const getTaskStatusDetails = (taskId) => {
@@ -309,6 +336,7 @@ define([
       message: message,
       status: taskStatus.status,
       errorFileUrl: errorFile ? errorFile.url : "",
+      errorFileId: summary.errorFileId || "",
       successCount: summary.successCount || 0,
       errorCount: summary.errorCount || 0,
     };
@@ -339,6 +367,41 @@ define([
           }),
         });
       }
+      return;
+    }
+    const decodeUnicodeEscapes = (text) => {
+      if (!text) {
+        return "";
+      }
+
+      return text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16)),
+      );
+    };
+
+    if (action === "downloaderrorcsv") {
+      const errorFileId = scriptContext.request.parameters.errorFileId;
+
+      if (!errorFileId) {
+        scriptContext.response.write({
+          output: "Missing error file.",
+        });
+        return;
+      }
+
+      const errorFile = file.load({ id: errorFileId });
+      const rawContents = errorFile.getContents() || "";
+      const decodedContents = decodeUnicodeEscapes(rawContents);
+
+      const downloadFileName = (errorFile.name || "error")
+        .replace(/\.(txt|json)$/i, "")
+        .concat(".csv");
+
+      downloadErrorCsv(
+        scriptContext.response,
+        decodedContents,
+        downloadFileName,
+      );
       return;
     }
 
@@ -392,6 +455,7 @@ define([
           statusTaskId,
           scriptContext.request.parameters.stagingfileid,
           taskStatus.errorFileUrl,
+          taskStatus.errorFileId,
         ),
       );
       return;
@@ -406,13 +470,14 @@ define([
           null,
           null,
           scriptContext.request.parameters.errorFileUrl,
+          scriptContext.request.parameters.errorFileId,
         ),
       );
       return;
     }
 
     scriptContext.response.writePage(
-      buildForm(null, null, null, null, null, null),
+      buildForm(null, null, null, null, null, null, null),
     );
   };
 
@@ -432,6 +497,7 @@ define([
           reqTransactionType,
           "Upload Failed",
           "Missing transaction type or file.",
+          null,
           null,
           null,
           null,
@@ -559,6 +625,7 @@ define([
           null,
           null,
           null,
+          null,
         ),
       );
     } catch (e) {
@@ -568,6 +635,7 @@ define([
           reqTransactionType,
           "Upload Failed",
           "Error processing file: " + e.message,
+          null,
           null,
           null,
           null,

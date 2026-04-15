@@ -153,13 +153,20 @@ define([
     );
     const csvFile = file.load({ id: fileId });
     csvFile.encoding = file.Encoding.UTF8;
-    const stagedContents = (csvFile.getContents() || "").replace(/^\uFEFF/, "").trim();
+    const stagedContents = (csvFile.getContents() || "")
+      .replace(/^\uFEFF/, "")
+      .trim();
     log.audit(
       "loadStagedRows:contents",
-      "length=" + stagedContents.length + ", preview=" + stagedContents.substring(0, 500),
+      "length=" +
+        stagedContents.length +
+        ", preview=" +
+        stagedContents.substring(0, 500),
     );
     const parsedRows = stagedContents ? JSON.parse(stagedContents) : [];
-    const normalizedRows = Array.isArray(parsedRows) ? parsedRows : [parsedRows];
+    const normalizedRows = Array.isArray(parsedRows)
+      ? parsedRows
+      : [parsedRows];
     const stagedRows = normalizedRows.map((row, index) => ({
       lineNumber: row.lineNumber || index + 2,
       transactionType: row.transactionType || transactionType,
@@ -217,9 +224,9 @@ define([
       mapContext.write({
         key: "error",
         value: JSON.stringify({
-            lineNumber: lineNumber,
-            message: "Missing External ID",
-          }),
+          lineNumber: lineNumber,
+          message: "Missing External ID",
+        }),
       });
       return;
     }
@@ -362,20 +369,20 @@ define([
     }
 
     // 임시로 업로드한 파일 삭제
-    // if (stagingFileId) {
-    //   try {
-    //     file.delete({ id: stagingFileId });
-    //     log.debug("summarize", "Deleted staging file: " + stagingFileId);
-    //   } catch (deleteError) {
-    //     log.error(
-    //       "summarize",
-    //       "Failed to delete staging file " +
-    //         stagingFileId +
-    //         ": " +
-    //         deleteError.message,
-    //     );
-    //   }
-    // }
+    if (stagingFileId) {
+      try {
+        file.delete({ id: stagingFileId });
+        log.debug("summarize", "Deleted staging file: " + stagingFileId);
+      } catch (deleteError) {
+        log.error(
+          "summarize",
+          "Failed to delete staging file " +
+            stagingFileId +
+            ": " +
+            deleteError.message,
+        );
+      }
+    }
 
     log.audit(
       "summarize",
