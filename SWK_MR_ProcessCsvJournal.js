@@ -15,8 +15,8 @@ define([
   "N/runtime",
   "./SWK_Utils_UploadCsvFiles",
 ], (file, log, record, runtime, csvUtils) => {
-  const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
-  const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
+  const CSV_FILE_ID_PARAM_JN = "custscript_swk_csv_file_id_jn";
+  const TRANSACTION_TYPE_PARAM_JN = "custscript_swk_csv_tran_type_jn";
   const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
   const RESULT_ERROR_PREFIX = "swk_mr_errors_";
 
@@ -73,7 +73,18 @@ define([
     (journalRows || []).forEach((journalRow) => {
       const rowData = journalRow.rowData || {};
 
+      log.debug(
+        "rowData check",
+        "Processing line with Account: " +
+          rowData["Account"] +
+          ", Debit: " +
+          rowData["Debit"] +
+          ", Credit: " +
+          rowData["Credit"],
+      );
+
       rec.selectNewLine({ sublistId: "line" });
+
       csvUtils.setCurrentLineTextIfPresent(
         rec,
         "line",
@@ -122,21 +133,44 @@ define([
     return rec.save();
   };
 
-  const loadStagedRows = (fileId) => {
+  const loadStagedRows = (fileId, transactionType) => {
     if (!fileId) {
       return [];
     }
 
     const csvFile = file.load({ id: fileId });
     csvFile.encoding = file.Encoding.UTF8;
-    return JSON.parse(csvFile.getContents() || "[]");
+    const stagedContents = csvFile.getContents() || "";
+    const lines = stagedContents
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== "");
+    const headers = lines.length > 0 ? csvUtils.parseCsvLine(lines[0]) : [];
+    const stagedRows = [];
+
+    for (let i = 1; i < lines.length; i += 1) {
+      const values = csvUtils.parseCsvLine(lines[i]);
+      const rowData = {};
+
+      for (let j = 0; j < headers.length; j += 1) {
+        rowData[headers[j]] = values[j] || "";
+      }
+
+      stagedRows.push({
+        lineNumber: i + 1,
+        transactionType: transactionType,
+        rowData: rowData,
+      });
+    }
+
+    return stagedRows;
   };
 
   const getInputData = () => {
     const script = runtime.getCurrentScript();
-    const fileId = script.getParameter({ name: CSV_FILE_ID_PARAM });
+    const fileId = script.getParameter({ name: CSV_FILE_ID_PARAM_JN });
     const transactionType = script.getParameter({
-      name: TRANSACTION_TYPE_PARAM,
+      name: TRANSACTION_TYPE_PARAM_JN,
     });
     const recordType = RECORD_TYPES[transactionType];
 
@@ -147,7 +181,7 @@ define([
       throw new Error("Invalid transaction type: " + transactionType);
     }
 
-    const stagedRows = loadStagedRows(fileId);
+    const stagedRows = loadStagedRows(fileId, transactionType);
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
@@ -158,6 +192,14 @@ define([
 
   const map = (mapContext) => {
     const input = JSON.parse(mapContext.value);
+
+    log.debug(
+      "map",
+      "Processing line " +
+        input.lineNumber +
+        " with data: " +
+        JSON.stringify(input.rowData),
+    );
     const { lineNumber, rowData } = input;
     const externalId = rowData["EXTERNAL ID"];
 
@@ -212,9 +254,12 @@ define([
 
   const summarize = (summaryContext) => {
     const script = runtime.getCurrentScript();
-    const stagingFileId = script.getParameter({ name: CSV_FILE_ID_PARAM });
+    const stagingFileId = script.getParameter({ name: CSV_FILE_ID_PARAM_JN });
     const stagingFile = stagingFileId ? file.load({ id: stagingFileId }) : null;
-    const stagedRows = loadStagedRows(stagingFileId);
+    const transactionType = script.getParameter({
+      name: TRANSACTION_TYPE_PARAM_JN,
+    });
+    const stagedRows = loadStagedRows(stagingFileId, transactionType);
     const stagedRowsByLine = csvUtils.indexStagedRowsByLine(stagedRows);
     let successCount = 0;
     let errorCount = 0;
@@ -294,20 +339,20 @@ define([
     }
 
     // 임시로 업로드한 파일 삭제
-    if (stagingFileId) {
-      try {
-        file.delete({ id: stagingFileId });
-        log.debug("summarize", "Deleted staging file: " + stagingFileId);
-      } catch (deleteError) {
-        log.error(
-          "summarize",
-          "Failed to delete staging file " +
-            stagingFileId +
-            ": " +
-            deleteError.message,
-        );
-      }
-    }
+    // if (stagingFileId) {
+    //   try {
+    //     file.delete({ id: stagingFileId });
+    //     log.debug("summarize", "Deleted staging file: " + stagingFileId);
+    //   } catch (deleteError) {
+    //     log.error(
+    //       "summarize",
+    //       "Failed to delete staging file " +
+    //         stagingFileId +
+    //         ": " +
+    //         deleteError.message,
+    //     );
+    //   }
+    // }
 
     log.audit(
       "summarize",

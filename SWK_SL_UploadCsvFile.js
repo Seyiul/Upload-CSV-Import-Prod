@@ -35,6 +35,9 @@ define([
 
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
+  const CSV_FILE_ID_PARAM_JN = "custscript_swk_csv_file_id_jn";
+  const TRANSACTION_TYPE_PARAM_JN = "custscript_swk_csv_tran_type_jn";
+
   const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
   /**
    * form 빌드 함수 - 업로드 폼과 상태 메시지 패널을 생성
@@ -443,7 +446,9 @@ define([
       });
 
       // CSV 파일 내용 읽어오기 (BOM 제거 포함)
+      uploadedFile.encoding = file.Encoding.UTF8;
       const csvContents = uploadedFile.getContents().replace(/^\uFEFF/, "");
+      log.debug("Uploaded CSV preview", csvContents);
       const lines = csvContents
         .split(/\r?\n/)
         .filter((line) => line.trim() !== "");
@@ -467,17 +472,34 @@ define([
         });
       }
 
+      log.debug(
+        "First staging row before save",
+        JSON.stringify(stagingRows[0] || {}),
+      );
+
       // JSON 형태로 변환된 데이터를 File Cabinet에 임시 파일로 저장하고, 해당 파일 ID를 Map/Reduce 스크립트에 전달하여 처리
       const stagingFile = file.create({
         name:
           (uploadedFile.name || `upload_${Date.now()}`).replace(/\.csv$/i, "") +
           ".json",
         fileType: file.Type.PLAINTEXT,
-        contents: JSON.stringify(stagingRows),
-        encoding: file.Encoding.UTF8,
+        contents: JSON.stringify(stagingRows).replace(
+          /[^\x00-\x7F]/g,
+          (ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"),
+        ),
         folder: templateFile.folder,
       });
+
+      log.debug("First row data", JSON.stringify(stagingRows[0] || {}));
+      log.debug(
+        "JSON before save",
+        JSON.stringify(stagingRows).substring(0, 500),
+      );
+
       const fileId = stagingFile.save();
+
+      const savedFile = file.load({ id: fileId });
+      log.debug("Saved file preview after save", savedFile.getContents() || "");
 
       if (reqTransactionType === "BILL") {
         log.debug("POST request", "Uploaded file saved with ID: " + fileId);
@@ -512,8 +534,8 @@ define([
           scriptId: MR_JOURNAL_SCRIPT_ID,
           deploymentId: MR_JOURNAL_DEPLOYMENT_ID,
           params: {
-            [CSV_FILE_ID_PARAM]: fileId,
-            [TRANSACTION_TYPE_PARAM]: reqTransactionType,
+            [CSV_FILE_ID_PARAM_JN]: fileId,
+            [TRANSACTION_TYPE_PARAM_JN]: reqTransactionType,
           },
         });
 
