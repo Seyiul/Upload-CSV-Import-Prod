@@ -498,9 +498,6 @@ define([
 
       const fileId = stagingFile.save();
 
-      const savedFile = file.load({ id: fileId });
-      log.debug("Saved file preview after save", savedFile.getContents() || "");
-
       if (reqTransactionType === "BILL") {
         log.debug("POST request", "Uploaded file saved with ID: " + fileId);
 

@@ -30,6 +30,13 @@ define([
   const createJournalRecord = (journalRows) => {
     const firstRowData =
       (journalRows && journalRows[0] && journalRows[0].rowData) || {};
+    log.audit(
+      "createJournalRecord:start",
+      "externalId=" +
+        (firstRowData["External ID"] || "") +
+        ", lines=" +
+        ((journalRows && journalRows.length) || 0),
+    );
     const rec = record.create({
       type: record.Type.JOURNAL_ENTRY,
       isDynamic: true,
@@ -39,7 +46,7 @@ define([
     csvUtils.setBodyValueIfPresent(
       rec,
       "externalid",
-      firstRowData["EXTERNAL ID"],
+      firstRowData["External ID"],
     );
     csvUtils.setBodyValueIfPresent(
       rec,
@@ -73,8 +80,8 @@ define([
     (journalRows || []).forEach((journalRow) => {
       const rowData = journalRow.rowData || {};
 
-      log.debug(
-        "rowData check",
+      log.audit(
+        "createJournalRecord:line",
         "Processing line with Account: " +
           rowData["Account"] +
           ", Debit: " +
@@ -119,7 +126,7 @@ define([
         rec,
         "line",
         "memo",
-        rowData["Memo"],
+        rowData["Memo(line)"],
       );
       csvUtils.setCurrentLineTextIfPresent(
         rec,
@@ -130,7 +137,9 @@ define([
       rec.commitLine({ sublistId: "line" });
     });
 
-    return rec.save();
+    const recordId = rec.save();
+    log.audit("createJournalRecord:saved", "recordId=" + recordId);
+    return recordId;
   };
 
   const loadStagedRows = (fileId, transactionType) => {
@@ -138,31 +147,26 @@ define([
       return [];
     }
 
+    log.audit(
+      "loadStagedRows:start",
+      "fileId=" + fileId + ", transactionType=" + transactionType,
+    );
     const csvFile = file.load({ id: fileId });
     csvFile.encoding = file.Encoding.UTF8;
-    const stagedContents = csvFile.getContents() || "";
-    const lines = stagedContents
-      .replace(/^\uFEFF/, "")
-      .split(/\r?\n/)
-      .filter((line) => line.trim() !== "");
-    const headers = lines.length > 0 ? csvUtils.parseCsvLine(lines[0]) : [];
-    const stagedRows = [];
+    const stagedContents = (csvFile.getContents() || "").replace(/^\uFEFF/, "").trim();
+    log.audit(
+      "loadStagedRows:contents",
+      "length=" + stagedContents.length + ", preview=" + stagedContents.substring(0, 500),
+    );
+    const parsedRows = stagedContents ? JSON.parse(stagedContents) : [];
+    const normalizedRows = Array.isArray(parsedRows) ? parsedRows : [parsedRows];
+    const stagedRows = normalizedRows.map((row, index) => ({
+      lineNumber: row.lineNumber || index + 2,
+      transactionType: row.transactionType || transactionType,
+      rowData: row.rowData || {},
+    }));
 
-    for (let i = 1; i < lines.length; i += 1) {
-      const values = csvUtils.parseCsvLine(lines[i]);
-      const rowData = {};
-
-      for (let j = 0; j < headers.length; j += 1) {
-        rowData[headers[j]] = values[j] || "";
-      }
-
-      stagedRows.push({
-        lineNumber: i + 1,
-        transactionType: transactionType,
-        rowData: rowData,
-      });
-    }
-
+    log.audit("loadStagedRows:done", "stagedRows=" + stagedRows.length);
     return stagedRows;
   };
 
@@ -181,7 +185,12 @@ define([
       throw new Error("Invalid transaction type: " + transactionType);
     }
 
+    log.audit(
+      "getInputData:start",
+      "fileId=" + fileId + ", transactionType=" + transactionType,
+    );
     const stagedRows = loadStagedRows(fileId, transactionType);
+    log.audit("getInputData:rows", "count=" + stagedRows.length);
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
@@ -192,24 +201,25 @@ define([
 
   const map = (mapContext) => {
     const input = JSON.parse(mapContext.value);
+    log.audit("map:start", "lineNumber=" + input.lineNumber);
 
-    log.debug(
-      "map",
+    log.audit(
+      "map:data",
       "Processing line " +
         input.lineNumber +
         " with data: " +
         JSON.stringify(input.rowData),
     );
     const { lineNumber, rowData } = input;
-    const externalId = rowData["EXTERNAL ID"];
+    const externalId = rowData["External ID"];
 
     if (!externalId) {
       mapContext.write({
         key: "error",
         value: JSON.stringify({
-          lineNumber: lineNumber,
-          message: "Missing EXTERNAL ID",
-        }),
+            lineNumber: lineNumber,
+            message: "Missing External ID",
+          }),
       });
       return;
     }
@@ -219,10 +229,15 @@ define([
       key: String(externalId),
       value: JSON.stringify(input),
     });
+    log.audit("map:write", "lineNumber=" + lineNumber + ", key=" + externalId);
   };
 
   const reduce = (reduceContext) => {
     const journalRows = reduceContext.values.map((value) => JSON.parse(value));
+    log.audit(
+      "reduce:start",
+      "key=" + reduceContext.key + ", rows=" + journalRows.length,
+    );
 
     try {
       const recordId = createJournalRecord(journalRows);
@@ -234,6 +249,10 @@ define([
           recordId: recordId,
         }),
       });
+      log.audit(
+        "reduce:success",
+        "key=" + reduceContext.key + ", recordId=" + recordId,
+      );
     } catch (e) {
       log.error(
         "reduce",
@@ -259,6 +278,10 @@ define([
     const transactionType = script.getParameter({
       name: TRANSACTION_TYPE_PARAM_JN,
     });
+    log.audit(
+      "summarize:start",
+      "fileId=" + stagingFileId + ", transactionType=" + transactionType,
+    );
     const stagedRows = loadStagedRows(stagingFileId, transactionType);
     const stagedRowsByLine = csvUtils.indexStagedRowsByLine(stagedRows);
     let successCount = 0;
