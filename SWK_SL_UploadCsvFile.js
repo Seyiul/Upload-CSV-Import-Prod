@@ -136,7 +136,7 @@ define([
       </div>
     `;
 
-    // 트랜재션 유형 선택 필드
+    // 트랜잭션 유형 선택 필드
     const transactionTypeField = form.addField({
       id: "custpage_transaction_type",
       type: serverWidget.FieldType.SELECT,
@@ -208,6 +208,7 @@ define([
       container: "custpage_group_upload_status",
     });
 
+    // 오류 파일 다운로드 URL 설정
     const suiteletUrl = url.resolveScript({
       scriptId: "customscript_swk_sl_uploadcsvfile",
       deploymentId: "customdeploy_swk_sl_uploadcsvfile",
@@ -379,6 +380,7 @@ define([
       );
     };
 
+    // 오류 CSV 파일 다운로드 요청 처리
     if (action === "downloaderrorcsv") {
       const errorFileId = scriptContext.request.parameters.errorFileId;
 
@@ -391,6 +393,8 @@ define([
 
       const errorFile = file.load({ id: errorFileId });
       const rawContents = errorFile.getContents() || "";
+
+      // 유니코드 이스케이프 디코딩
       const decodedContents = decodeUnicodeEscapes(rawContents);
 
       const downloadFileName = (errorFile.name || "error")
