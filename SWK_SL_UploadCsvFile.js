@@ -26,12 +26,16 @@ define([
     JOURNAL: 16683,
   };
 
+  // Map/Reduce 스크립트 ID 및 파라미터 이름 정의
   const MR_BILL_SCRIPT_ID = "customscript_swk_mr_processcsvbill";
   const MR_BILL_DEPLOYMENT_ID = "customdeploy_swk_mr_processcsvbill";
+
+  const MR_JOURNAL_SCRIPT_ID = "customscript_swk_mr_processcsvjournal";
+  const MR_JOURNAL_DEPLOYMENT_ID = "customdeploy_swk_mr_processcsvjournal";
+
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
   const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
-
   /**
    * form 빌드 함수 - 업로드 폼과 상태 메시지 패널을 생성
    */
@@ -501,17 +505,43 @@ define([
           },
         });
         return;
+      } else if (reqTransactionType === "JOURNAL") {
+        // Map/Reduce 작업 (JOURNAL 처리) 큐잉
+        const mrTask = task.create({
+          taskType: task.TaskType.MAP_REDUCE,
+          scriptId: MR_JOURNAL_SCRIPT_ID,
+          deploymentId: MR_JOURNAL_DEPLOYMENT_ID,
+          params: {
+            [CSV_FILE_ID_PARAM]: fileId,
+            [TRANSACTION_TYPE_PARAM]: reqTransactionType,
+          },
+        });
+
+        const taskId = mrTask.submit();
+
+        redirect.toSuitelet({
+          scriptId: "customscript_swk_sl_uploadcsvfile",
+          deploymentId: "customdeploy_swk_sl_uploadcsvfile",
+          parameters: {
+            trantype: reqTransactionType,
+            taskid: taskId,
+            stagingfileid: fileId,
+          },
+        });
+        return;
       }
 
-      redirect.toSuitelet({
-        scriptId: "customscript_swk_sl_uploadcsvfile",
-        deploymentId: "customdeploy_swk_sl_uploadcsvfile",
-        parameters: {
-          trantype: reqTransactionType,
-          statusTitle: "Upload Completed",
-          statusMessage: `CSV file saved successfully.\nFile ID: ${fileId}`,
-        },
-      });
+      // 지원되지 않는 트랜잭션 유형인 경우 에러 메시지 표시
+      scriptContext.response.writePage(
+        buildForm(
+          reqTransactionType,
+          "Upload Failed",
+          "Unsupported transaction type: " + reqTransactionType,
+          null,
+          null,
+          null,
+        ),
+      );
     } catch (e) {
       log.error("POST queue error", e);
       scriptContext.response.writePage(
