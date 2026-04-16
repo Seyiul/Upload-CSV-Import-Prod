@@ -147,22 +147,12 @@ define([
       return [];
     }
 
-    log.audit(
-      "loadStagedRows:start",
-      "fileId=" + fileId + ", transactionType=" + transactionType,
-    );
     const csvFile = file.load({ id: fileId });
     csvFile.encoding = file.Encoding.UTF8;
     const stagedContents = (csvFile.getContents() || "")
       .replace(/^\uFEFF/, "")
       .trim();
-    log.audit(
-      "loadStagedRows:contents",
-      "length=" +
-        stagedContents.length +
-        ", preview=" +
-        stagedContents.substring(0, 500),
-    );
+
     const parsedRows = stagedContents ? JSON.parse(stagedContents) : [];
     const normalizedRows = Array.isArray(parsedRows)
       ? parsedRows
@@ -173,7 +163,6 @@ define([
       rowData: row.rowData || {},
     }));
 
-    log.audit("loadStagedRows:done", "stagedRows=" + stagedRows.length);
     return stagedRows;
   };
 
@@ -192,12 +181,7 @@ define([
       throw new Error("Invalid transaction type: " + transactionType);
     }
 
-    log.audit(
-      "getInputData:start",
-      "fileId=" + fileId + ", transactionType=" + transactionType,
-    );
     const stagedRows = loadStagedRows(fileId, transactionType);
-    log.audit("getInputData:rows", "count=" + stagedRows.length);
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
@@ -208,15 +192,7 @@ define([
 
   const map = (mapContext) => {
     const input = JSON.parse(mapContext.value);
-    log.audit("map:start", "lineNumber=" + input.lineNumber);
 
-    log.audit(
-      "map:data",
-      "Processing line " +
-        input.lineNumber +
-        " with data: " +
-        JSON.stringify(input.rowData),
-    );
     const { lineNumber, rowData } = input;
     const externalId = rowData["External ID"];
 
@@ -241,10 +217,6 @@ define([
 
   const reduce = (reduceContext) => {
     const journalRows = reduceContext.values.map((value) => JSON.parse(value));
-    log.audit(
-      "reduce:start",
-      "key=" + reduceContext.key + ", rows=" + journalRows.length,
-    );
 
     try {
       const recordId = createJournalRecord(journalRows);
