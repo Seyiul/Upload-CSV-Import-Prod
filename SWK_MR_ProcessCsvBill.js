@@ -88,7 +88,7 @@ define([
         rec,
         "expense",
         "account",
-        rowData["Account(Expense)"],
+        rowData["Expense Account"],
       );
       csvUtils.setCurrentLineValueIfPresent(
         rec,

@@ -34,7 +34,7 @@ define([
       templateName: "PO Template.csv",
     },
     BILL: {
-      templateFileId: 16680,
+      templateFileId: 17968,
       templateName: "Bill Expense Template.csv",
       task: {
         scriptId: "customscript_swk_mr_processcsvbill",
