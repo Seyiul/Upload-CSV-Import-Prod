@@ -1,13 +1,12 @@
 /**
  * @NApiVersion 2.1
  * @NScriptType Suitelet
- * 
- * Description : CSV 파일 업로드를 처리하는 Suitelet 스크립트로, 사용자가 CSV 파일을 업로드하면 해당 파일을 NetSuite의 File Cabinet에 저장하고, Map/Reduce 스크립트를 통해 데이터를 처리하여  레코드를 생성
- * 
+ *
+ * Description : CSV 파일 업로드와 Map/Reduce 처리 시작, 상태 조회를 담당하는 Suitelet
+ *
  *  * Version  Date          Author           Remarks
  * -------  ------------    --------------    --------------------------------------
- * 1.00     2026-04-13      Seulyi            Initial development
-
+ * 1.00     2026-04-13      Seulyi Ri          Initial development
  */
 define([
   "N/ui/serverWidget",
@@ -19,72 +18,98 @@ define([
   "N/url",
   "./SWK_Utils_UploadCsvFiles",
 ], (serverWidget, log, file, task, search, redirect, url, csvUtils) => {
-  // 템플릿 파일 ID 매핑
-  const TEMPLATE_FILE_IDS = {
-    PO: 16682,
-    BILL: 16680,
-    INVOICE: 16681,
-    JOURNAL: 16683,
+  const SUITELET_SCRIPT_ID = "customscript_swk_sl_uploadcsvfile";
+  const SUITELET_DEPLOYMENT_ID = "customdeploy_swk_sl_uploadcsvfile";
+
+  const ACTIONS = {
+    taskStatus: "taskstatus",
+    downloadErrorCsv: "downloaderrorcsv",
   };
 
-  // Map/Reduce 스크립트 ID 및 파라미터 이름 정의
-  const MR_BILL_SCRIPT_ID = "customscript_swk_mr_processcsvbill";
-  const MR_BILL_DEPLOYMENT_ID = "customdeploy_swk_mr_processcsvbill";
-
-  const MR_JOURNAL_SCRIPT_ID = "customscript_swk_mr_processcsvjournal";
-  const MR_JOURNAL_DEPLOYMENT_ID = "customdeploy_swk_mr_processcsvjournal";
-
-  const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
-  const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
-  const CSV_FILE_ID_PARAM_JN = "custscript_swk_csv_file_id_jn";
-  const TRANSACTION_TYPE_PARAM_JN = "custscript_swk_csv_tran_type_jn";
-
   const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
+
+  const TRANSACTION_CONFIG = {
+    PO: {
+      templateFileId: 16682,
+      templateName: "PO Template.csv",
+    },
+    BILL: {
+      templateFileId: 16680,
+      templateName: "Bill Template.csv",
+      task: {
+        scriptId: "customscript_swk_mr_processcsvbill",
+        deploymentId: "customdeploy_swk_mr_processcsvbill",
+        params: {
+          fileId: "custscript_swk_csv_file_id",
+          transactionType: "custscript_swk_csv_tran_type",
+        },
+      },
+    },
+    INVOICE: {
+      templateFileId: 16681,
+      templateName: "Invoice Template.csv",
+    },
+    JOURNAL: {
+      templateFileId: 16683,
+      templateName: "Journal Template.csv",
+      task: {
+        scriptId: "customscript_swk_mr_processcsvjournal",
+        deploymentId: "customdeploy_swk_mr_processcsvjournal",
+        params: {
+          fileId: "custscript_swk_csv_file_id_jn",
+          transactionType: "custscript_swk_csv_tran_type_jn",
+        },
+      },
+    },
+  };
+
+  const createSuiteletUrl = (params) =>
+    url.resolveScript({
+      scriptId: SUITELET_SCRIPT_ID,
+      deploymentId: SUITELET_DEPLOYMENT_ID,
+      params: params || {},
+    });
+
+  const writeText = (response, output) => {
+    response.write({
+      output: output,
+    });
+  };
+
+  const writeJson = (response, payload) => {
+    writeText(response, JSON.stringify(payload || {}));
+  };
+
   /**
-   * form 빌드 함수 - 업로드 폼과 상태 메시지 패널을 생성
+   *  Form 생성 및 랜더링
    */
-  const buildForm = (
+  const buildForm = ({
     transactionType,
     statusTitle,
     statusMessage,
     taskId,
     stagingFileId,
-    errorFileUrl,
     errorFileId,
-  ) => {
+  }) => {
     const form = serverWidget.createForm({
       title: "Upload CSV File",
     });
+    const transactionConfig = TRANSACTION_CONFIG[transactionType] || {};
 
-    // 템플릿 다운로드 그룹
     form.addFieldGroup({
       id: "custpage_group_template_download",
       label: "Template Download",
     });
-
-    // 업로드 옵션 그룹
     form.addFieldGroup({
       id: "custpage_group_upload_options",
       label: "Upload Options",
     });
-
-    // 업로드 상태 그룹
     form.addFieldGroup({
       id: "custpage_group_upload_status",
       label: "Upload Status",
     });
 
-    // CSV 파일 업로드 필드 START
-    const fileFieldTopSpacing = form.addField({
-      id: "custpage_file_upload_top_spacing",
-      type: serverWidget.FieldType.INLINEHTML,
-      label: " ",
-    });
-    fileFieldTopSpacing.defaultValue = '<div style="margin-top:12px;"></div>';
-    fileFieldTopSpacing.updateLayoutType({
-      layoutType: serverWidget.FieldLayoutType.OUTSIDEABOVE,
-    });
-
+    // 파일 업로드 필드
     const fileField = form.addField({
       id: "custpage_import_file",
       type: serverWidget.FieldType.FILE,
@@ -97,32 +122,18 @@ define([
       layoutType: serverWidget.FieldLayoutType.OUTSIDEABOVE,
     });
 
-    const fileFieldBottomSpacing = form.addField({
-      id: "custpage_file_upload_bottom_spacing",
-      type: serverWidget.FieldType.INLINEHTML,
-      label: " ",
-    });
-    fileFieldBottomSpacing.defaultValue =
-      '<div style="margin-bottom:12px;"></div>';
-    fileFieldBottomSpacing.updateLayoutType({
-      layoutType: serverWidget.FieldLayoutType.OUTSIDEABOVE,
-    });
-
-    // CSV 파일 업로드 필드 END
-
-    // 템플릿 이름 필드 (선택된 트랜잭션 유형에 따라 업데이트)
     const templateNameField = form.addField({
       id: "custpage_template_name",
       type: serverWidget.FieldType.TEXT,
       label: "Template",
       container: "custpage_group_template_download",
     });
-    templateNameField.defaultValue = "Select a transaction type first";
+    templateNameField.defaultValue =
+      transactionConfig.templateName || "Select a transaction type first";
     templateNameField.updateDisplayType({
       displayType: serverWidget.FieldDisplayType.INLINE,
     });
 
-    // 템플릿 다운로드 링크 필드
     const templateLinkHtmlField = form.addField({
       id: "custpage_template_link_html",
       type: serverWidget.FieldType.INLINEHTML,
@@ -136,7 +147,6 @@ define([
       </div>
     `;
 
-    // 트랜잭션 유형 선택 필드
     const transactionTypeField = form.addField({
       id: "custpage_transaction_type",
       type: serverWidget.FieldType.SELECT,
@@ -148,29 +158,19 @@ define([
       value: "",
       text: "Select Transaction Type",
     });
-    transactionTypeField.addSelectOption({ value: "PO", text: "PO" });
-    transactionTypeField.addSelectOption({ value: "BILL", text: "Bill" });
-    transactionTypeField.addSelectOption({
-      value: "INVOICE",
-      text: "Invoice",
-    });
-    transactionTypeField.addSelectOption({
-      value: "JOURNAL",
-      text: "Journal",
+
+    Object.keys(TRANSACTION_CONFIG).forEach((type) => {
+      transactionTypeField.addSelectOption({
+        value: type,
+        text: type,
+      });
     });
 
     if (transactionType) {
       transactionTypeField.defaultValue = transactionType;
-      const templateNames = {
-        PO: "PO Template.csv",
-        BILL: "Bill Template.csv",
-        INVOICE: "Invoice Template.csv",
-        JOURNAL: "Journal Template.csv",
-      };
-      templateNameField.defaultValue = templateNames[transactionType] || "";
     }
 
-    // Map/Reduce 작업 관련 필드 START
+    // Map/Reduce Task ID와 Staging File ID를 저장하는 숨겨진 필드 START
     const taskIdField = form.addField({
       id: "custpage_task_id",
       type: serverWidget.FieldType.TEXT,
@@ -190,8 +190,8 @@ define([
       displayType: serverWidget.FieldDisplayType.HIDDEN,
     });
     stagingFileIdField.defaultValue = stagingFileId || "";
+    // Map/Reduce Task ID와 Staging File ID를 저장하는 숨겨진 필드 END
 
-    // 새로고침 버튼 - Map/Reduce 작업이 진행 중일 때 상태를 새로고침할 수 있도록 함
     if (taskId) {
       form.addButton({
         id: "custpage_refresh_status",
@@ -200,7 +200,6 @@ define([
       });
     }
 
-    // 상태 메시지 필드 - 업로드 결과/진행상태
     const statusField = form.addField({
       id: "custpage_result_html",
       type: serverWidget.FieldType.INLINEHTML,
@@ -208,58 +207,51 @@ define([
       container: "custpage_group_upload_status",
     });
 
-    // 오류 파일 다운로드 URL 설정
-    const suiteletUrl = url.resolveScript({
-      scriptId: "customscript_swk_sl_uploadcsvfile",
-      deploymentId: "customdeploy_swk_sl_uploadcsvfile",
-      params: {
-        action: "downloaderrorcsv",
-        errorFileId: errorFileId || "",
-      },
-    });
     if (statusTitle && statusMessage) {
+      // 에러 파일이 존재하는 경우 다운로드 링크 생성
+      const downloadUrl = errorFileId
+        ? createSuiteletUrl({
+            action: ACTIONS.downloadErrorCsv,
+            errorFileId: errorFileId,
+          })
+        : "";
+
       statusField.defaultValue = `
         <div id="swk-status-panel" style="margin-top:12px;border:1px solid #dbe4f0;border-radius:14px;background:#ffffff;padding:18px 20px;box-shadow:0 8px 24px rgba(15,23,42,0.06);">
           <div style="font-size:18px;font-weight:600;color:#0f172a;margin-bottom:8px;">${csvUtils.escapeHtml(statusTitle)}</div>
           <div style="font-size:14px;line-height:1.6;color:#475569;white-space:pre-wrap;">${csvUtils.escapeHtml(statusMessage)}</div>
           ${
-            errorFileId
-              ? `<div style="margin-top:14px;"><a href="${suiteletUrl}" style="color:#1d4ed8;font-weight:600;text-decoration:none;">Download Error CSV</a></div>`
+            downloadUrl
+              ? `<div style="margin-top:14px;"><a href="${downloadUrl}" style="color:#1d4ed8;font-weight:600;text-decoration:none;">Download Error CSV</a></div>`
               : ""
           }
         </div>
       `;
     } else {
-      statusField.defaultValue = `<div id="swk-status-panel"></div>`;
+      statusField.defaultValue = '<div id="swk-status-panel"></div>';
     }
-
-    // Map/Reduce 작업 관련 필드 END
 
     form.addSubmitButton({
       label: "Submit",
     });
-
     form.clientScriptModulePath = "./SWK_CS_UploadCsvFile.js";
     return form;
   };
 
-  // CSV 파일 다운로드 응답 설정 함수 - 오류 보고서 다운로드 등에 사용
-  const downloadErrorCsv = (response, contents, filename) => {
+  // 오류 보고서 CSV 파일 내용 생성
+  const writeDownloadResponse = (response, contents, filename) => {
     response.setHeader({
       name: "Content-Type",
       value: "text/csv; charset=UTF-8",
     });
-
     response.setHeader({
       name: "Content-Disposition",
       value: `attachment; filename="${filename}"`,
     });
-
-    response.write({
-      output: `\uFEFF${contents}`,
-    });
+    writeText(response, `\uFEFF${contents}`);
   };
 
+  // Map/Reduce Task 상태 조회
   const getTaskStatusDetails = (taskId) => {
     if (!taskId) {
       return null;
@@ -279,17 +271,18 @@ define([
     };
   };
 
-  // 파일캐비넷에서 Map/Reduce 작업 결과 요약 파일 검색
+  // Staging File에서 업로드된 Json 데이터 로드
   const getSummaryFile = (stagingFileId) => {
     if (!stagingFileId) {
       return null;
     }
 
-    const summaryName = `${RESULT_SUMMARY_PREFIX}${stagingFileId}.json`;
     const result = search
       .create({
         type: "file",
-        filters: [["name", "is", summaryName]],
+        filters: [
+          ["name", "is", `${RESULT_SUMMARY_PREFIX}${stagingFileId}.json`],
+        ],
         columns: ["internalid"],
       })
       .run()
@@ -304,6 +297,7 @@ define([
     });
   };
 
+  // Map/Reduce Task 완료 후 결과 조회
   const getCompletedTaskResult = (taskId, stagingFileId) => {
     const taskStatus = getTaskStatusDetails(taskId);
     if (!taskStatus || String(taskStatus.status).toUpperCase() !== "COMPLETE") {
@@ -316,13 +310,6 @@ define([
     }
 
     const summary = JSON.parse(summaryFile.getContents() || "{}");
-    const errorFile = summary.errorFileId
-      ? file.load({ id: summary.errorFileId })
-      : null;
-    let message =
-      `Status: ${taskStatus.status}\n` +
-      `Success: ${summary.successCount || 0}\n` +
-      `Errors: ${summary.errorCount || 0}`;
 
     log.debug(
       "getCompletedTaskResult",
@@ -334,317 +321,262 @@ define([
         summary.errorCount > 0
           ? "Upload Completed With Errors"
           : "Upload Completed",
-      message: message,
+      message:
+        `Status: ${taskStatus.status}\n` +
+        `Success: ${summary.successCount || 0}\n` +
+        `Errors: ${summary.errorCount || 0}`,
       status: taskStatus.status,
-      errorFileUrl: errorFile ? errorFile.url : "",
       errorFileId: summary.errorFileId || "",
       successCount: summary.successCount || 0,
       errorCount: summary.errorCount || 0,
     };
   };
 
-  /**
-   * GET 요청 처리 - 업로드 폼 렌더링, 템플릿 URL 반환, 작업 상태 조회 등
-   */
-  const handleGetRequest = (scriptContext) => {
-    const action = scriptContext.request.parameters.action;
+  const renderForm = (response, formOptions) => {
+    response.writePage(buildForm(formOptions || {}));
+  };
 
-    // 작업 상태 조회
-    if (action === "taskstatus") {
+  // 업로드한 CSV 파일 Parsing하여 rowData 형태로 변환
+  const getUploadedCsvRows = (uploadedFile, transactionType) => {
+    uploadedFile.encoding = file.Encoding.UTF8;
+    const lines = uploadedFile
+      .getContents()
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== "");
+
+    const headers = lines.length > 0 ? csvUtils.parseCsvLine(lines[0]) : [];
+
+    return lines.slice(1).map((line, index) => {
+      const values = csvUtils.parseCsvLine(line);
+      const rowData = {};
+
+      for (let i = 0; i < headers.length; i += 1) {
+        rowData[headers[i]] = values[i] || "";
+      }
+
+      return {
+        lineNumber: index + 2,
+        transactionType: transactionType,
+        rowData: rowData,
+      };
+    });
+  };
+
+  // RowData를 기반으로 Staging File 저장
+  const saveStagingFile = (uploadedFile, transactionType, folderId) => {
+    const stagingRows = getUploadedCsvRows(uploadedFile, transactionType);
+
+    log.debug(
+      "First staging row before save",
+      JSON.stringify(stagingRows[0] || {}),
+    );
+
+    const stagingFile = file.create({
+      name:
+        (uploadedFile.name || `upload_${Date.now()}`).replace(/\.csv$/i, "") +
+        ".json",
+      fileType: file.Type.PLAINTEXT,
+      contents: csvUtils.encodeUnicodeEscapes(JSON.stringify(stagingRows)),
+      folder: folderId,
+    });
+
+    log.debug(
+      "JSON before save",
+      JSON.stringify(stagingRows).substring(0, 500),
+    );
+
+    return stagingFile.save();
+  };
+
+  const submitProcessingTask = (transactionType, stagingFileId) => {
+    const transactionConfig = TRANSACTION_CONFIG[transactionType];
+    const taskConfig = transactionConfig && transactionConfig.task;
+
+    if (!taskConfig) {
+      return null;
+    }
+
+    const mrTask = task.create({
+      taskType: task.TaskType.MAP_REDUCE,
+      scriptId: taskConfig.scriptId,
+      deploymentId: taskConfig.deploymentId,
+      params: {
+        [taskConfig.params.fileId]: stagingFileId,
+        [taskConfig.params.transactionType]: transactionType,
+      },
+    });
+
+    return mrTask.submit();
+  };
+
+  const redirectToStatusPage = (transactionType, taskId, stagingFileId) => {
+    redirect.toSuitelet({
+      scriptId: SUITELET_SCRIPT_ID,
+      deploymentId: SUITELET_DEPLOYMENT_ID,
+      parameters: {
+        trantype: transactionType,
+        taskid: taskId,
+        stagingfileid: stagingFileId,
+      },
+    });
+  };
+
+  const handleGetRequest = (scriptContext) => {
+    const { request, response } = scriptContext;
+    const { parameters } = request;
+    const action = parameters.action;
+
+    if (action === ACTIONS.taskStatus) {
       try {
-        const taskStatus = getCompletedTaskResult(
-          scriptContext.request.parameters.taskid,
-          scriptContext.request.parameters.stagingfileid,
+        writeJson(
+          response,
+          getCompletedTaskResult(parameters.taskid, parameters.stagingfileid),
         );
-        scriptContext.response.write({
-          output: JSON.stringify(taskStatus || {}),
-        });
       } catch (e) {
-        scriptContext.response.write({
-          output: JSON.stringify({
-            title: "Upload Failed",
-            message: e.message,
-            status: "FAILED",
-          }),
+        writeJson(response, {
+          title: "Upload Failed",
+          message: e.message,
+          status: "FAILED",
         });
       }
       return;
     }
-    const decodeUnicodeEscapes = (text) => {
-      if (!text) {
-        return "";
-      }
 
-      return text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
-        String.fromCharCode(parseInt(hex, 16)),
-      );
-    };
-
-    // 오류 CSV 파일 다운로드 요청 처리
-    if (action === "downloaderrorcsv") {
-      const errorFileId = scriptContext.request.parameters.errorFileId;
-
-      if (!errorFileId) {
-        scriptContext.response.write({
-          output: "Missing error file.",
-        });
+    if (action === ACTIONS.downloadErrorCsv) {
+      if (!parameters.errorFileId) {
+        writeText(response, "Missing error file.");
         return;
       }
 
-      const errorFile = file.load({ id: errorFileId });
-      const rawContents = errorFile.getContents() || "";
-
-      // 유니코드 이스케이프 디코딩
-      const decodedContents = decodeUnicodeEscapes(rawContents);
-
+      const errorFile = file.load({ id: parameters.errorFileId });
       const downloadFileName = (errorFile.name || "error")
         .replace(/\.(txt|json)$/i, "")
         .concat(".csv");
 
-      downloadErrorCsv(
-        scriptContext.response,
-        decodedContents,
+      writeDownloadResponse(
+        response,
+        csvUtils.decodeUnicodeEscapes(errorFile.getContents() || ""),
         downloadFileName,
       );
       return;
     }
 
-    // 템플릿 URL 반환
-    const transactionType = scriptContext.request.parameters.transactionType;
-    if (transactionType) {
-      log.debug(
-        "Processing URL request for transaction type: " + transactionType,
-      );
-      const fileId = TEMPLATE_FILE_IDS[transactionType];
-      if (fileId) {
-        try {
-          const loadFile = file.load({ id: fileId });
-          scriptContext.response.write({
-            output: JSON.stringify({ finalURL: loadFile.url }),
-          });
-        } catch (e) {
-          scriptContext.response.write({
-            output: JSON.stringify({ error: e.message }),
-          });
-        }
-      } else {
-        scriptContext.response.write({
-          output: JSON.stringify({ error: "Invalid transaction type" }),
+    if (parameters.transactionType) {
+      const transactionConfig = TRANSACTION_CONFIG[parameters.transactionType];
+
+      if (!transactionConfig || !transactionConfig.templateFileId) {
+        writeJson(response, { error: "Invalid transaction type" });
+        return;
+      }
+
+      try {
+        const templateFile = file.load({
+          id: transactionConfig.templateFileId,
         });
+        // 템플릿 파일 URL 반환 - client에 전달
+        writeJson(response, { finalURL: templateFile.url });
+      } catch (e) {
+        writeJson(response, { error: e.message });
       }
       return;
     }
 
-    // 기본 GET 요청 - status 메시지 또는 업로드 폼 렌더링
-    const statusTaskId = scriptContext.request.parameters.taskid;
-    const statusTransactionType =
-      scriptContext.request.parameters.custpage_transaction_type ||
-      scriptContext.request.parameters.trantype ||
-      "";
-    const statusTitle = scriptContext.request.parameters.statusTitle;
-    const statusMessage = scriptContext.request.parameters.statusMessage;
+    const transactionType =
+      parameters.custpage_transaction_type || parameters.trantype || "";
 
     log.debug("Received GET request, rendering form");
 
-    if (statusTaskId) {
+    if (parameters.taskid) {
       const taskStatus = getCompletedTaskResult(
-        statusTaskId,
-        scriptContext.request.parameters.stagingfileid,
+        parameters.taskid,
+        parameters.stagingfileid,
       );
-      scriptContext.response.writePage(
-        buildForm(
-          statusTransactionType,
-          taskStatus.title,
-          taskStatus.message,
-          statusTaskId,
-          scriptContext.request.parameters.stagingfileid,
-          taskStatus.errorFileUrl,
-          taskStatus.errorFileId,
-        ),
-      );
+
+      renderForm(response, {
+        transactionType: transactionType,
+        statusTitle: taskStatus && taskStatus.title,
+        statusMessage: taskStatus && taskStatus.message,
+        taskId: parameters.taskid,
+        stagingFileId: parameters.stagingfileid,
+        errorFileId: taskStatus && taskStatus.errorFileId,
+      });
       return;
     }
 
-    if (statusTitle || statusMessage) {
-      scriptContext.response.writePage(
-        buildForm(
-          statusTransactionType,
-          statusTitle,
-          statusMessage,
-          null,
-          null,
-          scriptContext.request.parameters.errorFileUrl,
-          scriptContext.request.parameters.errorFileId,
-        ),
-      );
+    if (parameters.statusTitle || parameters.statusMessage) {
+      renderForm(response, {
+        transactionType: transactionType,
+        statusTitle: parameters.statusTitle,
+        statusMessage: parameters.statusMessage,
+        errorFileId: parameters.errorFileId,
+      });
       return;
     }
 
-    scriptContext.response.writePage(
-      buildForm(null, null, null, null, null, null, null),
-    );
+    renderForm(response, {});
   };
 
-  /**
-   * POST 요청 처리 - CSV 파일 업로드, Map/Reduce 작업 큐잉, 결과 페이지로 리디렉션 등
-   */
   const handlePostRequest = (scriptContext) => {
+    const { request, response } = scriptContext;
+    const transactionType = request.parameters.custpage_transaction_type;
+    const uploadedFile = request.files.custpage_import_file;
+    const transactionConfig = TRANSACTION_CONFIG[transactionType];
+
     log.debug("Received POST request, queueing MR");
 
-    const reqTransactionType =
-      scriptContext.request.parameters.custpage_transaction_type;
-    const uploadedFile = scriptContext.request.files["custpage_import_file"];
+    if (!transactionType || !uploadedFile) {
+      renderForm(response, {
+        transactionType: transactionType,
+        statusTitle: "Upload Failed",
+        statusMessage: "Missing transaction type or file.",
+      });
+      return;
+    }
 
-    if (!reqTransactionType || !uploadedFile) {
-      scriptContext.response.writePage(
-        buildForm(
-          reqTransactionType,
-          "Upload Failed",
-          "Missing transaction type or file.",
-          null,
-          null,
-          null,
-          null,
-        ),
-      );
+    if (!transactionConfig || !transactionConfig.templateFileId) {
+      renderForm(response, {
+        transactionType: transactionType,
+        statusTitle: "Upload Failed",
+        statusMessage: "Unsupported transaction type: " + transactionType,
+      });
       return;
     }
 
     try {
       const templateFile = file.load({
-        id: TEMPLATE_FILE_IDS[reqTransactionType],
+        id: transactionConfig.templateFileId,
       });
-
-      // CSV 파일 내용 읽어오기 (BOM 제거 포함)
-      uploadedFile.encoding = file.Encoding.UTF8;
-      const csvContents = uploadedFile.getContents().replace(/^\uFEFF/, "");
-      log.debug("Uploaded CSV preview", csvContents);
-      const lines = csvContents
-        .split(/\r?\n/)
-        .filter((line) => line.trim() !== "");
-
-      // CSV 파일 파싱 - 첫 줄은 헤더로 사용, 나머지는 데이터로 처리하여 Map/Reduce 스크립트에 전달할 JSON 형태로 변환
-      const headers = lines.length > 0 ? csvUtils.parseCsvLine(lines[0]) : [];
-      const stagingRows = [];
-
-      for (let i = 1; i < lines.length; i += 1) {
-        const values = csvUtils.parseCsvLine(lines[i]);
-        const rowData = {};
-
-        for (let j = 0; j < headers.length; j += 1) {
-          rowData[headers[j]] = values[j] || "";
-        }
-
-        stagingRows.push({
-          lineNumber: i + 1,
-          transactionType: reqTransactionType,
-          rowData: rowData,
-        });
-      }
-
-      log.debug(
-        "First staging row before save",
-        JSON.stringify(stagingRows[0] || {}),
+      const stagingFileId = saveStagingFile(
+        uploadedFile,
+        transactionType,
+        templateFile.folder,
       );
 
-      // JSON 형태로 변환된 데이터를 File Cabinet에 임시 파일로 저장하고, 해당 파일 ID를 Map/Reduce 스크립트에 전달하여 처리
-      const stagingFile = file.create({
-        name:
-          (uploadedFile.name || `upload_${Date.now()}`).replace(/\.csv$/i, "") +
-          ".json",
-        fileType: file.Type.PLAINTEXT,
-        contents: JSON.stringify(stagingRows).replace(
-          /[^\x00-\x7F]/g,
-          (ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"),
-        ),
-        folder: templateFile.folder,
-      });
-
-      log.debug("First row data", JSON.stringify(stagingRows[0] || {}));
       log.debug(
-        "JSON before save",
-        JSON.stringify(stagingRows).substring(0, 500),
+        "POST request",
+        "Uploaded file saved with ID: " + stagingFileId,
       );
 
-      const fileId = stagingFile.save();
-
-      if (reqTransactionType === "BILL") {
-        log.debug("POST request", "Uploaded file saved with ID: " + fileId);
-
-        // Map/Reduce 작업 (BILL 처리) 큐잉
-        const mrTask = task.create({
-          taskType: task.TaskType.MAP_REDUCE,
-          scriptId: MR_BILL_SCRIPT_ID,
-          deploymentId: MR_BILL_DEPLOYMENT_ID,
-          params: {
-            [CSV_FILE_ID_PARAM]: fileId,
-            [TRANSACTION_TYPE_PARAM]: reqTransactionType,
-          },
-        });
-
-        const taskId = mrTask.submit();
-
-        redirect.toSuitelet({
-          scriptId: "customscript_swk_sl_uploadcsvfile",
-          deploymentId: "customdeploy_swk_sl_uploadcsvfile",
-          parameters: {
-            trantype: reqTransactionType,
-            taskid: taskId,
-            stagingfileid: fileId,
-          },
-        });
-        return;
-      } else if (reqTransactionType === "JOURNAL") {
-        // Map/Reduce 작업 (JOURNAL 처리) 큐잉
-        const mrTask = task.create({
-          taskType: task.TaskType.MAP_REDUCE,
-          scriptId: MR_JOURNAL_SCRIPT_ID,
-          deploymentId: MR_JOURNAL_DEPLOYMENT_ID,
-          params: {
-            [CSV_FILE_ID_PARAM_JN]: fileId,
-            [TRANSACTION_TYPE_PARAM_JN]: reqTransactionType,
-          },
-        });
-
-        const taskId = mrTask.submit();
-
-        redirect.toSuitelet({
-          scriptId: "customscript_swk_sl_uploadcsvfile",
-          deploymentId: "customdeploy_swk_sl_uploadcsvfile",
-          parameters: {
-            trantype: reqTransactionType,
-            taskid: taskId,
-            stagingfileid: fileId,
-          },
+      // Map/Reduce Task 제출
+      const taskId = submitProcessingTask(transactionType, stagingFileId);
+      if (!taskId) {
+        renderForm(response, {
+          transactionType: transactionType,
+          statusTitle: "Upload Failed",
+          statusMessage: "Unsupported transaction type: " + transactionType,
         });
         return;
       }
 
-      // 지원되지 않는 트랜잭션 유형인 경우 에러 메시지 표시
-      scriptContext.response.writePage(
-        buildForm(
-          reqTransactionType,
-          "Upload Failed",
-          "Unsupported transaction type: " + reqTransactionType,
-          null,
-          null,
-          null,
-          null,
-        ),
-      );
+      redirectToStatusPage(transactionType, taskId, stagingFileId);
     } catch (e) {
       log.error("POST queue error", e);
-      scriptContext.response.writePage(
-        buildForm(
-          reqTransactionType,
-          "Upload Failed",
-          "Error processing file: " + e.message,
-          null,
-          null,
-          null,
-          null,
-        ),
-      );
+      renderForm(response, {
+        transactionType: transactionType,
+        statusTitle: "Upload Failed",
+        statusMessage: "Error processing file: " + e.message,
+      });
     }
   };
 
@@ -655,6 +587,7 @@ define([
       handlePostRequest(scriptContext);
     }
   };
+
   return {
     onRequest: onRequest,
   };

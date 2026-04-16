@@ -4,7 +4,43 @@
  * @NModuleScope SameAccount
  */
 define(["N/log", "N/url"], function (log, url) {
-  function ensureLoadingOverlay() {
+  const SUITELET_SCRIPT_ID = "customscript_swk_sl_uploadcsvfile";
+  const SUITELET_DEPLOYMENT_ID = "customdeploy_swk_sl_uploadcsvfile";
+
+  const FIELD_IDS = {
+    transactionType: "custpage_transaction_type",
+    templateName: "custpage_template_name",
+    importFile: "custpage_import_file",
+    taskId: "custpage_task_id",
+    stagingFileId: "custpage_staging_file_id",
+  };
+
+  const TEMPLATE_NAMES = {
+    PO: "PO Template.csv",
+    BILL: "Bill Template.csv",
+    INVOICE: "Invoice Template.csv",
+    JOURNAL: "Journal Template.csv",
+  };
+
+  const TEMPLATE_LINK_DEFAULT_TEXT =
+    "Template link will appear after selection";
+
+  const getFieldValue = (fieldId) => {
+    const field = document.getElementById(fieldId);
+    return field ? field.value : "";
+  };
+
+  const resolveSuiteletUrl = (params) =>
+    url.resolveScript({
+      scriptId: SUITELET_SCRIPT_ID,
+      deploymentId: SUITELET_DEPLOYMENT_ID,
+      params: params || {},
+    });
+
+  const getTemplateName = (transactionType) =>
+    TEMPLATE_NAMES[transactionType] || "Select a transaction type first";
+
+  const ensureLoadingOverlay = () => {
     if (document.getElementById("swk-upload-loading")) {
       return;
     }
@@ -28,70 +64,38 @@ define(["N/log", "N/url"], function (log, url) {
 
     document.head.appendChild(style);
     document.body.appendChild(overlay);
-  }
+  };
 
-  function showLoadingOverlay() {
+  const setLoadingOverlayVisible = (visible) => {
     ensureLoadingOverlay();
     const overlay = document.getElementById("swk-upload-loading");
     if (overlay) {
-      overlay.style.display = "flex";
+      overlay.style.display = visible ? "flex" : "none";
     }
-  }
+  };
 
-  function hideLoadingOverlay() {
-    const overlay = document.getElementById("swk-upload-loading");
-    if (overlay) {
-      overlay.style.display = "none";
-    }
-  }
-
-  function pageInit() {
-    log.debug("Client Script", "loaded successfully");
-    ensureLoadingOverlay();
-    hideLoadingOverlay();
-  }
-
-  function fieldChanged(scriptContext) {
-    if (scriptContext.fieldId !== "custpage_transaction_type") {
+  const updateTemplateLink = (templateName, templateUrl) => {
+    const container = document.getElementById(
+      "custpage_template_link_container",
+    );
+    if (!container) {
       return;
     }
 
-    const transactionType = scriptContext.currentRecord.getValue({
-      fieldId: "custpage_transaction_type",
-    });
+    container.innerHTML = templateUrl
+      ? `<a href="${templateUrl}" target="_blank">Download ${templateName}</a>`
+      : "Error loading template link";
+  };
 
-    let templateName = "Select a transaction type first";
-    if (transactionType === "PO") {
-      templateName = "PO Template.csv";
-    } else if (transactionType === "BILL") {
-      templateName = "Bill Template.csv";
-    } else if (transactionType === "INVOICE") {
-      templateName = "Invoice Template.csv";
-    } else if (transactionType === "JOURNAL") {
-      templateName = "Journal Template.csv";
-    }
-
-    scriptContext.currentRecord.setValue({
-      fieldId: "custpage_template_name",
-      value: templateName,
-    });
-
-    const container = document.getElementById("custpage_template_link_container");
-    if (!transactionType) {
-      if (container) {
-        container.innerHTML = "Template link will appear after selection";
-      }
-      return;
-    }
-
-    const suiteletURL = url.resolveScript({
-      scriptId: "customscript_swk_sl_uploadcsvfile",
-      deploymentId: "customdeploy_swk_sl_uploadcsvfile",
-      params: { transactionType: transactionType },
-    });
-
+  // Suitelet에서 템플릿 링크를 조회하여 업데이트
+  const loadTemplateLink = (transactionType, templateName) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("GET", suiteletURL, true);
+    xhr.open(
+      "GET",
+      resolveSuiteletUrl({ transactionType: transactionType }),
+      true,
+    );
+
     xhr.onreadystatechange = function () {
       if (xhr.readyState !== 4 || xhr.status !== 200) {
         return;
@@ -99,61 +103,83 @@ define(["N/log", "N/url"], function (log, url) {
 
       try {
         const response = JSON.parse(xhr.responseText);
-        if (container) {
-          container.innerHTML = response.finalURL
-            ? `<a href="${response.finalURL}" target="_blank">Download ${templateName}</a>`
-            : "Error loading template link";
-        }
+        updateTemplateLink(templateName, response.finalURL);
       } catch (e) {
         log.debug("Client Script", "JSON parse error: " + e.message);
+        updateTemplateLink(templateName, "");
       }
     };
+
     xhr.send();
+  };
+
+  function pageInit() {
+    log.debug("Client Script", "loaded successfully");
+    setLoadingOverlayVisible(false);
+  }
+
+  function fieldChanged(scriptContext) {
+    if (scriptContext.fieldId !== FIELD_IDS.transactionType) {
+      return;
+    }
+
+    const transactionType = scriptContext.currentRecord.getValue({
+      fieldId: FIELD_IDS.transactionType,
+    });
+    const templateName = getTemplateName(transactionType);
+
+    scriptContext.currentRecord.setValue({
+      fieldId: FIELD_IDS.templateName,
+      value: templateName,
+    });
+
+    if (!transactionType) {
+      const container = document.getElementById(
+        "custpage_template_link_container",
+      );
+      if (container) {
+        container.innerHTML = TEMPLATE_LINK_DEFAULT_TEXT;
+      }
+      return;
+    }
+
+    loadTemplateLink(transactionType, templateName);
   }
 
   function saveRecord(scriptContext) {
     const transactionType = scriptContext.currentRecord.getValue({
-      fieldId: "custpage_transaction_type",
+      fieldId: FIELD_IDS.transactionType,
     });
     const fileValue = scriptContext.currentRecord.getValue({
-      fieldId: "custpage_import_file",
+      fieldId: FIELD_IDS.importFile,
     });
 
     if (transactionType && fileValue) {
-      showLoadingOverlay();
+      setLoadingOverlayVisible(true);
     }
 
     return true;
   }
 
   function refreshStatus() {
-    const taskField = document.getElementById("custpage_task_id");
-    const taskId = taskField ? taskField.value : "";
-    const stagingField = document.getElementById("custpage_staging_file_id");
-    const stagingFileId = stagingField ? stagingField.value : "";
-    const tranTypeField = document.getElementById("custpage_transaction_type");
-    const transactionType = tranTypeField ? tranTypeField.value : "";
+    const taskId = getFieldValue(FIELD_IDS.taskId);
 
     if (!taskId) {
       return;
     }
 
-    showLoadingOverlay();
-    window.location.href = url.resolveScript({
-      scriptId: "customscript_swk_sl_uploadcsvfile",
-      deploymentId: "customdeploy_swk_sl_uploadcsvfile",
-      params: {
-        taskid: taskId,
-        trantype: transactionType,
-        stagingfileid: stagingFileId,
-      },
+    setLoadingOverlayVisible(true);
+    window.location.href = resolveSuiteletUrl({
+      taskid: taskId,
+      trantype: getFieldValue(FIELD_IDS.transactionType),
+      stagingfileid: getFieldValue(FIELD_IDS.stagingFileId),
     });
   }
 
   return {
-    pageInit: pageInit,
-    fieldChanged: fieldChanged,
-    saveRecord: saveRecord,
-    refreshStatus: refreshStatus,
+    pageInit,
+    fieldChanged,
+    saveRecord,
+    refreshStatus,
   };
 });

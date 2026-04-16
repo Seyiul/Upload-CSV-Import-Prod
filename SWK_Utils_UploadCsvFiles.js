@@ -1,8 +1,24 @@
 /**
  * @NApiVersion 2.1
  */
-define(["N/search", "N/log"], (search, log) => {
+define(["N/search"], (search) => {
+  const hasValue = (value) =>
+    value !== null && value !== undefined && value !== "";
+
   /** Parsing 관련 유틸리티 함수 모음 START */
+
+  // 유니코드 이스케이프 처리 함수
+  const encodeUnicodeEscapes = (text) =>
+    String(text || "").replace(
+      /[^\x00-\x7F]/g,
+      (ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"),
+    );
+
+  // 유니코드 이스케이프 해제 함수
+  const decodeUnicodeEscapes = (text) =>
+    String(text || "").replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16)),
+    );
 
   /**
    * CSV 줄을 파싱하여 값을 배열로 반환
@@ -83,7 +99,7 @@ define(["N/search", "N/log"], (search, log) => {
    * @returns {number|null} 파싱된 숫자 값
    */
   const parseNumberValue = (value) => {
-    if (!value && value !== 0) {
+    if (!hasValue(value) && value !== 0) {
       return null;
     }
 
@@ -128,7 +144,7 @@ define(["N/search", "N/log"], (search, log) => {
   };
 
   const setBodyValueIfPresent = (rec, fieldId, value) => {
-    if (value === null || value === undefined || value === "") {
+    if (!hasValue(value)) {
       return;
     }
 
@@ -152,7 +168,7 @@ define(["N/search", "N/log"], (search, log) => {
 
   // 현재 라인에 값이 존재하는 경우에 line에 값 설정
   const setCurrentLineValueIfPresent = (rec, sublistId, fieldId, value) => {
-    if (value === null || value === undefined || value === "") {
+    if (!hasValue(value)) {
       return;
     }
 
@@ -239,15 +255,10 @@ define(["N/search", "N/log"], (search, log) => {
       return null;
     }
 
-    const safeContents = contents.replace(
-      /[^\x00-\x7F]/g,
-      (ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"),
-    );
-
     const errorFile = fileModule.create({
       name: `${errorPrefix}${stagingFileId}.txt`,
       fileType: fileModule.Type.PLAINTEXT,
-      contents: safeContents,
+      contents: encodeUnicodeEscapes(contents),
       folder: folderId,
     });
 
@@ -291,6 +302,8 @@ define(["N/search", "N/log"], (search, log) => {
     escapeHtml,
     parseDateValue,
     parseNumberValue,
+    encodeUnicodeEscapes,
+    decodeUnicodeEscapes,
     escapeCsvValue,
     buildCsvLine,
     setBodyTextIfPresent,
