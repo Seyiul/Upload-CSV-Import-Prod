@@ -35,7 +35,7 @@ define([
     },
     BILL: {
       templateFileId: 16680,
-      templateName: "Bill Template.csv",
+      templateName: "Bill Expense Template.csv",
       task: {
         scriptId: "customscript_swk_mr_processcsvbill",
         deploymentId: "customdeploy_swk_mr_processcsvbill",
@@ -162,7 +162,7 @@ define([
     Object.keys(TRANSACTION_CONFIG).forEach((type) => {
       transactionTypeField.addSelectOption({
         value: type,
-        text: type,
+        text: type === "BILL" ? "BILL (Expense)" : type,
       });
     });
 
