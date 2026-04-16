@@ -29,117 +29,155 @@ define([
     JOURNAL: "journalentry",
   };
 
-  const createBillRecord = (rowData) => {
+  const createBillRecord = (billRows) => {
+    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+
+    // Body 필드 매핑
     const rec = record.create({
       type: record.Type.VENDOR_BILL,
       isDynamic: true,
     });
-    const locationId = csvUtils.findLocationIdByValue(rowData["Location"]);
+    const locationId = csvUtils.findLocationIdByValue(firstRowData["Location"]);
 
-    if (rowData["Location"] && !locationId) {
-      throw new Error("Location not found: " + rowData["Location"]);
+    if (firstRowData["Location"] && !locationId) {
+      throw new Error("Location not found: " + firstRowData["Location"]);
     }
 
-    csvUtils.setBodyValueIfPresent(rec, "externalid", rowData["EXTERNAL ID"]);
-    csvUtils.setBodyTextIfPresent(rec, "entity", rowData["Vendor"]);
+    csvUtils.setBodyValueIfPresent(
+      rec,
+      "externalid",
+      firstRowData["EXTERNAL ID"],
+    );
+    csvUtils.setBodyTextIfPresent(rec, "entity", firstRowData["Vendor"]);
     csvUtils.setBodyValueIfPresent(
       rec,
       "trandate",
-      csvUtils.parseDateValue(rowData["Date"]),
+      csvUtils.parseDateValue(firstRowData["Date"]),
     );
-    csvUtils.setBodyValueIfPresent(rec, "tranid", rowData["Reference No."]);
-    csvUtils.setBodyValueIfPresent(rec, "memo", rowData["Memo"]);
-    csvUtils.setBodyTextIfPresent(rec, "account", rowData["Account"]);
-    csvUtils.setBodyTextIfPresent(rec, "department", rowData["Department"]);
+    csvUtils.setBodyValueIfPresent(
+      rec,
+      "tranid",
+      firstRowData["Reference No."],
+    );
+    csvUtils.setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
+    csvUtils.setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
+    csvUtils.setBodyTextIfPresent(
+      rec,
+      "department",
+      firstRowData["Department"],
+    );
     csvUtils.setBodyValueIfPresent(rec, "location", locationId);
-    csvUtils.setBodyTextIfPresent(rec, "currency", rowData["Currency"]);
+    csvUtils.setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
     csvUtils.setBodyTextIfPresent(
       rec,
       "custbody_swk_transcategory",
-      rowData["Transaction Category"],
+      firstRowData["Transaction Category"],
     );
     csvUtils.setBodyValueIfPresent(
       rec,
       "exchangerate",
-      csvUtils.parseNumberValue(rowData["Exchange Rate"]),
+      csvUtils.parseNumberValue(firstRowData["Exchange Rate"]),
     );
 
-    rec.selectNewLine({ sublistId: "expense" });
-    csvUtils.setCurrentLineTextIfPresent(
-      rec,
-      "expense",
-      "account",
-      rowData["Account(Expense)"],
-    );
-    csvUtils.setCurrentLineValueIfPresent(
-      rec,
-      "expense",
-      "memo",
-      rowData["Description"],
-    );
-    csvUtils.setCurrentLineValueIfPresent(
-      rec,
-      "expense",
-      "amount",
-      csvUtils.parseNumberValue(rowData["Amount"]) ||
-        (csvUtils.parseNumberValue(rowData["Quantity"]) || 0) *
-          (csvUtils.parseNumberValue(rowData["Rate"]) || 0),
-    );
-    csvUtils.setCurrentLineTextIfPresent(
-      rec,
-      "expense",
-      "department",
-      rowData["Department(Line)"],
-    );
-    csvUtils.setCurrentLineValueIfPresent(
-      rec,
-      "expense",
-      "location",
-      locationId,
-    );
-    csvUtils.setCurrentLineTextIfPresent(
-      rec,
-      "expense",
-      "taxcode",
-      rowData["Tax Code"],
-    );
-    csvUtils.setCurrentLineValueIfPresent(
-      rec,
-      "expense",
-      "tax1amt",
-      csvUtils.parseNumberValue(rowData["Tax AMT"]),
-    );
-    csvUtils.setCurrentLineTextIfPresent(
-      rec,
-      "expense",
-      "amortizationsched",
-      rowData["Amort. Schedule"],
-    );
-    csvUtils.setCurrentLineValueIfPresent(
-      rec,
-      "expense",
-      "amortizstartdate",
-      csvUtils.parseDateValue(rowData["Amort. Start"]),
-    );
-    csvUtils.setCurrentLineValueIfPresent(
-      rec,
-      "expense",
-      "amortizationenddate",
-      csvUtils.parseDateValue(rowData["Amort. End"]),
-    );
-    rec.commitLine({ sublistId: "expense" });
+    // CSV의 각 행을 Vendor Bill의 Expense 라인으로 매핑
+    (billRows || []).forEach((row) => {
+      const rowData = row.rowData || {};
+
+      rec.selectNewLine({ sublistId: "expense" });
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        "account",
+        rowData["Account(Expense)"],
+      );
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "memo",
+        rowData["Description"],
+      );
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "amount",
+        csvUtils.parseNumberValue(rowData["Amount"]) ||
+          (csvUtils.parseNumberValue(rowData["Quantity"]) || 0) *
+            (csvUtils.parseNumberValue(rowData["Rate"]) || 0),
+      );
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        "department",
+        rowData["Department(Line)"],
+      );
+
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "location",
+        locationId,
+      );
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        "taxcode",
+        rowData["Tax Code"],
+      );
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "tax1amt",
+        csvUtils.parseNumberValue(rowData["Tax AMT"]),
+      );
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        "amortizationsched",
+        rowData["Amort. Schedule"],
+      );
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "amortizstartdate",
+        csvUtils.parseDateValue(rowData["Amort. Start"]),
+      );
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "amortizationenddate",
+        csvUtils.parseDateValue(rowData["Amort. End"]),
+      );
+      rec.commitLine({ sublistId: "expense" });
+    });
 
     return rec.save();
   };
 
-  const loadStagedRows = (fileId) => {
+  const loadStagedRows = (fileId, transactionType) => {
     if (!fileId) {
       return [];
     }
 
     const csvFile = file.load({ id: fileId });
     csvFile.encoding = file.Encoding.UTF8;
-    return JSON.parse(csvFile.getContents() || "[]");
+
+    // CSV 파일에서 내용을 읽어와 JSON으로 파싱
+    const stagedContents = (csvFile.getContents() || "")
+      .replace(/^\uFEFF/, "")
+      .trim();
+
+    const parsedRows = stagedContents ? JSON.parse(stagedContents) : [];
+    const normalizedRows = Array.isArray(parsedRows)
+      ? parsedRows
+      : [parsedRows];
+
+    const stagedRows = normalizedRows.map((row, index) => ({
+      lineNumber: row.lineNumber || index + 2,
+      transactionType: row.transactionType || transactionType,
+      rowData: row.rowData || {},
+    }));
+
+    return stagedRows;
   };
 
   const getInputData = () => {
@@ -157,7 +195,7 @@ define([
       throw new Error("Invalid transaction type: " + transactionType);
     }
 
-    const stagedRows = loadStagedRows(fileId);
+    const stagedRows = loadStagedRows(fileId, transactionType);
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
@@ -168,37 +206,63 @@ define([
 
   const map = (mapContext) => {
     const input = JSON.parse(mapContext.value);
-    const { lineNumber, transactionType, recordType, rowData } = input;
+    const { lineNumber, rowData } = input;
 
-    try {
-      const recordId = createBillRecord(rowData);
+    const externalId = rowData["EXTERNAL ID"];
 
-      mapContext.write({
-        key: "success",
-        value: JSON.stringify({
-          lineNumber: lineNumber,
-          recordId: recordId,
-        }),
-      });
-    } catch (e) {
-      log.error("map", "Error processing row " + lineNumber + ": " + e.message);
+    if (!externalId) {
       mapContext.write({
         key: "error",
         value: JSON.stringify({
           lineNumber: lineNumber,
-          message: e.message,
+          message: "Missing External ID",
         }),
       });
+      return;
     }
+
+    //external id를 키로, 전체 행 데이터를 값으로 전달
+    mapContext.write({
+      key: String(externalId),
+      value: JSON.stringify(input),
+    });
+    log.audit("map:write", "lineNumber=" + lineNumber + ", key=" + externalId);
   };
 
   const reduce = (reduceContext) => {
-    reduceContext.values.forEach((value) => {
+    const billRows = reduceContext.values.map((value) => JSON.parse(value));
+
+    try {
+      const recordId = createBillRecord(billRows);
+
       reduceContext.write({
-        key: reduceContext.key,
-        value: value,
+        key: "success",
+        value: JSON.stringify({
+          externalId: reduceContext.key,
+          recordId: recordId,
+        }),
       });
-    });
+
+      log.audit(
+        "reduce:success",
+        "key=" + reduceContext.key + ", recordId=" + recordId,
+      );
+    } catch (e) {
+      log.error(
+        "reduce",
+        "Error processing row " + reduceContext.key + ": " + e.message,
+      );
+
+      billRows.forEach((row) => {
+        reduceContext.write({
+          key: "error",
+          value: JSON.stringify({
+            lineNumber: row.lineNumber,
+            message: e.message,
+          }),
+        });
+      });
+    }
   };
 
   const summarize = (summaryContext) => {
