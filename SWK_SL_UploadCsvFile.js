@@ -16,8 +16,19 @@ define([
   "N/search",
   "N/redirect",
   "N/url",
+  "N/runtime",
   "./SWK_Utils_UploadCsvFiles",
-], (serverWidget, log, file, task, search, redirect, url, csvUtils) => {
+], (
+  serverWidget,
+  log,
+  file,
+  task,
+  search,
+  redirect,
+  url,
+  runtime,
+  csvUtils,
+) => {
   const SUITELET_SCRIPT_ID = "customscript_swk_sl_uploadcsvfile";
   const SUITELET_DEPLOYMENT_ID = "customdeploy_swk_sl_uploadcsvfile";
 
@@ -28,13 +39,18 @@ define([
 
   const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
 
+  const TEMPLATE_FILE_ID_PARAMS = {
+    PO: "custscript_swk_po_template_file_id",
+    BILL: "custscript_swk_bill_template_file_id",
+    INVOICE: "custscript_swk_invoice_template_file_id",
+    JOURNAL: "custscript_swk_journal_template_file_id",
+  };
+
   const TRANSACTION_CONFIG = {
     PO: {
-      templateFileId: 16682,
       templateName: "PO Template.csv",
     },
     BILL: {
-      templateFileId: 17968,
       templateName: "Bill Expense Template.csv",
       task: {
         scriptId: "customscript_swk_mr_processcsvbill",
@@ -46,7 +62,6 @@ define([
       },
     },
     INVOICE: {
-      templateFileId: 16681,
       templateName: "Invoice Template.csv",
       task: {
         scriptId: "customscript_swk_mr_processcsvinvoice",
@@ -58,7 +73,6 @@ define([
       },
     },
     JOURNAL: {
-      templateFileId: 16683,
       templateName: "Journal Template.csv",
       task: {
         scriptId: "customscript_swk_mr_processcsvjournal",
@@ -69,6 +83,23 @@ define([
         },
       },
     },
+  };
+
+  // transactionType에 따른 템플릿 파일 ID 및 Map/Reduce Task 설정 return
+  const getTransactionConfig = (transactionType) => {
+    const transactionConfig = TRANSACTION_CONFIG[transactionType];
+    const templateFileIdParam = TEMPLATE_FILE_ID_PARAMS[transactionType];
+
+    if (!transactionConfig || !templateFileIdParam) {
+      return transactionConfig;
+    }
+
+    return {
+      ...transactionConfig,
+      templateFileId: runtime.getCurrentScript().getParameter({
+        name: templateFileIdParam,
+      }),
+    };
   };
 
   const createSuiteletUrl = (params) =>
@@ -102,7 +133,7 @@ define([
     const form = serverWidget.createForm({
       title: "Upload CSV File",
     });
-    const transactionConfig = TRANSACTION_CONFIG[transactionType] || {};
+    const transactionConfig = getTransactionConfig(transactionType) || {};
 
     form.addFieldGroup({
       id: "custpage_group_template_download",
@@ -398,7 +429,7 @@ define([
   };
 
   const submitProcessingTask = (transactionType, stagingFileId) => {
-    const transactionConfig = TRANSACTION_CONFIG[transactionType];
+    const transactionConfig = getTransactionConfig(transactionType);
     const taskConfig = transactionConfig && transactionConfig.task;
 
     if (!taskConfig) {
@@ -471,7 +502,9 @@ define([
     }
 
     if (parameters.transactionType) {
-      const transactionConfig = TRANSACTION_CONFIG[parameters.transactionType];
+      const transactionConfig = getTransactionConfig(
+        parameters.transactionType,
+      );
 
       if (!transactionConfig || !transactionConfig.templateFileId) {
         writeJson(response, { error: "Invalid transaction type" });
@@ -529,7 +562,7 @@ define([
     const { request, response } = scriptContext;
     const transactionType = request.parameters.custpage_transaction_type;
     const uploadedFile = request.files.custpage_import_file;
-    const transactionConfig = TRANSACTION_CONFIG[transactionType];
+    const transactionConfig = getTransactionConfig(transactionType);
 
     log.debug("Received POST request, queueing MR");
 
