@@ -49,6 +49,14 @@ define([
   const TRANSACTION_CONFIG = {
     PO: {
       templateName: "PO Template.csv",
+      task: {
+        scriptId: "customscript_swk_mr_processcsvpo",
+        deploymentId: "customdeploy_swk_mr_processcsvpo",
+        params: {
+          fileId: "custscript_swk_csv_file_id_po",
+          transactionType: "custscript_swk_csv_tran_type_po",
+        },
+      },
     },
     BILL: {
       templateName: "Bill Expense Template.csv",
@@ -201,7 +209,12 @@ define([
     Object.keys(TRANSACTION_CONFIG).forEach((type) => {
       transactionTypeField.addSelectOption({
         value: type,
-        text: type === "BILL" ? "BILL (Expense)" : type,
+        text:
+          type === "BILL"
+            ? "BILL (Expense)"
+            : type === "PO"
+              ? "Purchase Order"
+              : type,
       });
     });
 
