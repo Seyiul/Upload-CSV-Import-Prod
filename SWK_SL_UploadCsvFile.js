@@ -48,6 +48,14 @@ define([
     INVOICE: {
       templateFileId: 16681,
       templateName: "Invoice Template.csv",
+      task: {
+        scriptId: "customscript_swk_mr_processcsvinvoice",
+        deploymentId: "customdeploy_swk_mr_processcsvinvoice",
+        params: {
+          fileId: "custscript_swk_csv_file_id_iv",
+          transactionType: "custscript_swk_csv_tran_type_iv",
+        },
+      },
     },
     JOURNAL: {
       templateFileId: 16683,

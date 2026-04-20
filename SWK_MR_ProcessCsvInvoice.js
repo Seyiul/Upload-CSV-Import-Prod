@@ -7,9 +7,15 @@
  *  * Version  Author        Date            Description
  *  * 1.00     Seulyi        2026-04-20      Initial development
  */
-define([], () => {
-  const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
-  const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
+define([
+  "N/file",
+  "N/log",
+  "N/record",
+  "N/runtime",
+  "./SWK_Utils_UploadCsvFiles",
+], (file, log, record, runtime, csvUtils) => {
+  const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_iv";
+  const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_iv";
   const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
   const RESULT_ERROR_PREFIX = "swk_mr_errors_";
 
@@ -20,21 +26,129 @@ define([], () => {
     JOURNAL: "journalentry",
   };
 
+  const FIELD_PROJECT_BODY = "custbody_swk_project_mainsingle";
+  const FIELD_PROJECT_LINE = "custcol_swk_project_line";
+  const FIELD_PROJECT_SEG = "cseg_swk_lapopjt";
+
   const createInvoiceRecord = (invRows) => {
     const firstRowData = (invRows && invRows[0] && invRows[0].rowData) || {};
     const rec = record.create({
-      type: RECORD_TYPES.INVOICE,
+      type: record.Type.INVOICE,
       isDynamic: true,
     });
 
-    // Body fields
+    // Body 필드 매핑
+    const locationId = csvUtils.findLocationIdByValue(firstRowData["Location"]);
 
-    // Line fields
-    invRows.forEach((row) => {
+    if (firstRowData["Location"] && !locationId) {
+      throw new Error("Location not found: " + firstRowData["Location"]);
+    }
+
+    csvUtils.setBodyValueIfPresent(
+      rec,
+      "externalid",
+      firstRowData["External ID"] || firstRowData["EXTERNAL ID"],
+    );
+    csvUtils.setBodyTextIfPresent(rec, "entity", firstRowData["Customer"]);
+    csvUtils.setBodyValueIfPresent(
+      rec,
+      "trandate",
+      csvUtils.parseDateValue(
+        firstRowData["Date (YYYY/MM/DD)"] || firstRowData["Date"],
+      ),
+    );
+    csvUtils.setBodyTextIfPresent(
+      rec,
+      "custbody_swk_transcategory",
+      firstRowData["Transaction Category"],
+    );
+    csvUtils.setBodyTextIfPresent(
+      rec,
+      FIELD_PROJECT_BODY,
+      firstRowData["Project"],
+    );
+    csvUtils.setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
+    csvUtils.setBodyTextIfPresent(
+      rec,
+      "postingperiod",
+      firstRowData["Posting Period"],
+    );
+    csvUtils.setBodyValueIfPresent(rec, "otherrefnum", firstRowData["PO #"]);
+    csvUtils.setBodyValueIfPresent(
+      rec,
+      "duedate",
+      csvUtils.parseDateValue(firstRowData["Due Date"]),
+    );
+    csvUtils.setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
+    csvUtils.setBodyTextIfPresent(rec, "account", firstRowData["Account(AR)"]);
+    csvUtils.setBodyTextIfPresent(rec, "salesrep", firstRowData["Sales Rep"]);
+    csvUtils.setBodyTextIfPresent(
+      rec,
+      "department",
+      firstRowData["Department"],
+    );
+    csvUtils.setBodyValueIfPresent(rec, "location", locationId);
+    csvUtils.setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
+    csvUtils.setBodyValueIfPresent(
+      rec,
+      "exchangerate",
+      csvUtils.parseNumberValue(firstRowData["Exchange Rate"]),
+    );
+
+    // Line 필드 매핑
+
+    (invRows || []).forEach((row) => {
       const rowData = row.rowData || {};
 
       rec.selectNewLine({ sublistId: "item" });
-
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        "item",
+        rowData["Item"],
+      );
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        "description",
+        rowData["Description"],
+      );
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "quantity",
+        csvUtils.parseNumberValue(rowData["Quantity"]),
+      );
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "rate",
+        csvUtils.parseNumberValue(rowData["Rate"]),
+      );
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        "taxcode",
+        rowData["Tax Code"],
+      );
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        "department",
+        rowData["Department(Line)"] || rowData["Department"],
+      );
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        FIELD_PROJECT_LINE,
+        rowData["Project(Line)"],
+      );
+      csvUtils.setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        FIELD_PROJECT_SEG,
+        rowData["Project(seg)"],
+      );
       rec.commitLine({ sublistId: "item" });
     });
     return rec.save();
@@ -96,7 +210,7 @@ define([], () => {
     const input = JSON.parse(mapContext.value);
     const { lineNumber, rowData } = input;
 
-    const externalId = rowData["EXTERNAL ID"];
+    const externalId = rowData["External ID"] || rowData["EXTERNAL ID"];
 
     if (!externalId) {
       mapContext.write({
@@ -118,10 +232,10 @@ define([], () => {
   };
 
   const reduce = (reduceContext) => {
-    const billRows = reduceContext.values.map((value) => JSON.parse(value));
+    const invRows = reduceContext.values.map((value) => JSON.parse(value));
 
     try {
-      const recordId = createBillRecord(billRows);
+      const recordId = createInvoiceRecord(invRows);
 
       reduceContext.write({
         key: "success",
@@ -141,7 +255,7 @@ define([], () => {
         "Error processing row " + reduceContext.key + ": " + e.message,
       );
 
-      billRows.forEach((row) => {
+      invRows.forEach((row) => {
         reduceContext.write({
           key: "error",
           value: JSON.stringify({
