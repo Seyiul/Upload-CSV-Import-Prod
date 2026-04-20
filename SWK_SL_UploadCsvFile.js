@@ -98,15 +98,15 @@ define([
 
     form.addFieldGroup({
       id: "custpage_group_template_download",
-      label: "Template Download",
+      label: "템플릿 다운로드",
     });
     form.addFieldGroup({
       id: "custpage_group_upload_options",
-      label: "Upload Options",
+      label: "업로드 옵션",
     });
     form.addFieldGroup({
       id: "custpage_group_upload_status",
-      label: "Upload Status",
+      label: "업로드 상태",
     });
 
     // 파일 업로드 필드
@@ -129,7 +129,7 @@ define([
       container: "custpage_group_template_download",
     });
     templateNameField.defaultValue =
-      transactionConfig.templateName || "Select a transaction type first";
+      transactionConfig.templateName || "Transaction Type을 선택하세요.";
     templateNameField.updateDisplayType({
       displayType: serverWidget.FieldDisplayType.INLINE,
     });
@@ -143,7 +143,7 @@ define([
     templateLinkHtmlField.defaultValue = `
       <div style="margin-top:10px;">
         <div class="smallgraytextnolink uir-label">Download Link</div>
-        <div id="custpage_template_link_container">Template link will appear after selection</div>
+        <div id="custpage_template_link_container"></div>
       </div>
     `;
 
@@ -232,7 +232,7 @@ define([
     }
 
     form.addSubmitButton({
-      label: "Submit",
+      label: "제출",
     });
     form.clientScriptModulePath = "./SWK_CS_UploadCsvFile.js";
     return form;

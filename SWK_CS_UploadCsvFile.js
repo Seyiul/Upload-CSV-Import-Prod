@@ -22,8 +22,7 @@ define(["N/log", "N/url"], function (log, url) {
     JOURNAL: "Journal Template.csv",
   };
 
-  const TEMPLATE_LINK_DEFAULT_TEXT =
-    "Template link will appear after selection";
+  const TEMPLATE_LINK_DEFAULT_TEXT = "";
 
   const getFieldValue = (fieldId) => {
     const field = document.getElementById(fieldId);
