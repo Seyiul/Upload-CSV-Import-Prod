@@ -125,6 +125,13 @@ define([
         "rate",
         csvUtils.parseNumberValue(rowData["Rate"]),
       );
+
+      csvUtils.setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "amount",
+        csvUtils.parseNumberValue(rowData["Amount"]),
+      );
       csvUtils.setCurrentLineTextIfPresent(
         rec,
         "item",
