@@ -27,55 +27,27 @@ define([
     RESULT_ERROR_PREFIX,
   } = uploadCsvConstants;
 
-  const getHeaderLabel = (headerConfig) =>
-    Array.isArray(headerConfig) ? headerConfig.join(" or ") : headerConfig;
-
-  const getHeaderAliases = (headerConfig) =>
-    Array.isArray(headerConfig) ? headerConfig : [headerConfig];
-
-  const validateMappedHeaders = (stagedRows, transactionType) => {
-    const requiredHeaders = REQUIRED_CSV_HEADERS[transactionType] || [];
-    const firstRowData =
-      (stagedRows && stagedRows[0] && stagedRows[0].rowData) || {};
-    const uploadedHeaders = Object.keys(firstRowData);
-
-    if (!stagedRows || stagedRows.length === 0) {
-      return ["Uploaded CSV has no data rows."];
-    }
-
-    if (uploadedHeaders.length === 0) {
-      return ["Uploaded CSV has no mapped headers."];
-    }
-
-    return requiredHeaders
-      .filter((headerConfig) =>
-        getHeaderAliases(headerConfig).every(
-          (header) => uploadedHeaders.indexOf(header) === -1,
-        ),
-      )
-      .map((headerConfig) => "Missing column: " + getHeaderLabel(headerConfig));
-  };
-
-  const assertValidMappedHeaders = (stagedRows, transactionType) => {
-    const errors = validateMappedHeaders(stagedRows, transactionType);
-
-    if (errors.length > 0) {
-      throw new Error("CSV header validation failed.\n" + errors.join("\n"));
-    }
-  };
-
-  const getErrorDisplayMessage = (error) => {
-    let message = String(error || "");
-
-    try {
-      const parsedError = JSON.parse(message);
-      message = parsedError.message || parsedError.name || message;
-    } catch (e) {
-      // NetSuite summary errors are usually JSON strings, but plain text is OK.
-    }
-
-    return message.replace(/^Error:\s*/, "").replace(/\s+\[[\s\S]*\]$/, "");
-  };
+  const {
+    setBodyValueIfPresent,
+    setBodyTextIfPresent,
+    parseDateValue,
+    parseNumberValue,
+    hasValue,
+    escapeCsvValue,
+    buildCsvLine,
+    assertValidMappedHeaders,
+    indexStagedRowsByLine,
+    getErrorDisplayMessage,
+    buildErrorReportCsvContents,
+    saveErrorReportFile,
+    saveProcessingSummaryFile,
+    setCurrentLineValueIfPresent,
+    setCurrentLineTextIfPresent,
+    findLocationIdByValue,
+    getHeaderLabel,
+    getHeaderAliases,
+    validateMappedHeaders,
+  } = csvUtils;
 
   const createBillRecord = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
@@ -85,46 +57,34 @@ define([
       type: record.Type.VENDOR_BILL,
       isDynamic: true,
     });
-    const locationId = csvUtils.findLocationIdByValue(firstRowData["Location"]);
+    const locationId = findLocationIdByValue(firstRowData["Location"]);
 
     if (firstRowData["Location"] && !locationId) {
       throw new Error("Location not found: " + firstRowData["Location"]);
     }
 
-    csvUtils.setBodyValueIfPresent(
-      rec,
-      "externalid",
-      firstRowData["EXTERNAL ID"],
-    );
-    csvUtils.setBodyTextIfPresent(rec, "entity", firstRowData["Vendor"]);
-    csvUtils.setBodyValueIfPresent(
+    setBodyValueIfPresent(rec, "externalid", firstRowData["EXTERNAL ID"]);
+    setBodyTextIfPresent(rec, "entity", firstRowData["Vendor"]);
+    setBodyValueIfPresent(
       rec,
       "trandate",
-      csvUtils.parseDateValue(firstRowData["Date"]),
+      parseDateValue(firstRowData["Date"]),
     );
-    csvUtils.setBodyValueIfPresent(
-      rec,
-      "tranid",
-      firstRowData["Reference No."],
-    );
-    csvUtils.setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
-    csvUtils.setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
-    csvUtils.setBodyTextIfPresent(
-      rec,
-      "department",
-      firstRowData["Department"],
-    );
-    csvUtils.setBodyValueIfPresent(rec, "location", locationId);
-    csvUtils.setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
-    csvUtils.setBodyTextIfPresent(
+    setBodyValueIfPresent(rec, "tranid", firstRowData["Reference No."]);
+    setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
+    setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
+    setBodyTextIfPresent(rec, "department", firstRowData["Department"]);
+    setBodyValueIfPresent(rec, "location", locationId);
+    setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
+    setBodyTextIfPresent(
       rec,
       "custbody_swk_transcategory",
       firstRowData["Transaction Category"],
     );
-    csvUtils.setBodyValueIfPresent(
+    setBodyValueIfPresent(
       rec,
       "exchangerate",
-      csvUtils.parseNumberValue(firstRowData["Exchange Rate"]),
+      parseNumberValue(firstRowData["Exchange Rate"]),
     );
 
     // CSV의 각 행을 Vendor Bill의 Expense 라인으로 매핑
@@ -132,68 +92,63 @@ define([
       const rowData = row.rowData || {};
 
       rec.selectNewLine({ sublistId: "expense" });
-      csvUtils.setCurrentLineTextIfPresent(
+      setCurrentLineTextIfPresent(
         rec,
         "expense",
         "account",
         rowData["Expense Account"],
       );
-      csvUtils.setCurrentLineValueIfPresent(
+      setCurrentLineValueIfPresent(
         rec,
         "expense",
         "memo",
         rowData["Description"],
       );
-      csvUtils.setCurrentLineValueIfPresent(
+      setCurrentLineValueIfPresent(
         rec,
         "expense",
         "amount",
-        csvUtils.parseNumberValue(rowData["Amount"]) ||
-          (csvUtils.parseNumberValue(rowData["Quantity"]) || 0) *
-            (csvUtils.parseNumberValue(rowData["Rate"]) || 0),
+        parseNumberValue(rowData["Amount"]) ||
+          (parseNumberValue(rowData["Quantity"]) || 0) *
+            (parseNumberValue(rowData["Rate"]) || 0),
       );
-      csvUtils.setCurrentLineTextIfPresent(
+      setCurrentLineTextIfPresent(
         rec,
         "expense",
         "department",
         rowData["Department(Line)"],
       );
 
-      csvUtils.setCurrentLineValueIfPresent(
-        rec,
-        "expense",
-        "location",
-        locationId,
-      );
-      csvUtils.setCurrentLineTextIfPresent(
+      setCurrentLineValueIfPresent(rec, "expense", "location", locationId);
+      setCurrentLineTextIfPresent(
         rec,
         "expense",
         "taxcode",
         rowData["Tax Code"],
       );
-      csvUtils.setCurrentLineValueIfPresent(
+      setCurrentLineValueIfPresent(
         rec,
         "expense",
         "tax1amt",
-        csvUtils.parseNumberValue(rowData["Tax AMT"]),
+        parseNumberValue(rowData["Tax AMT"]),
       );
-      csvUtils.setCurrentLineTextIfPresent(
+      setCurrentLineTextIfPresent(
         rec,
         "expense",
         "amortizationsched",
         rowData["Amort. Schedule"],
       );
-      csvUtils.setCurrentLineValueIfPresent(
+      setCurrentLineValueIfPresent(
         rec,
         "expense",
         "amortizstartdate",
-        csvUtils.parseDateValue(rowData["Amort. Start"]),
+        parseDateValue(rowData["Amort. Start"]),
       );
-      csvUtils.setCurrentLineValueIfPresent(
+      setCurrentLineValueIfPresent(
         rec,
         "expense",
         "amortizationenddate",
-        csvUtils.parseDateValue(rowData["Amort. End"]),
+        parseDateValue(rowData["Amort. End"]),
       );
       rec.commitLine({ sublistId: "expense" });
     });
@@ -246,7 +201,7 @@ define([
     const stagedRows = loadStagedRows(fileId, transactionType);
 
     // CSV 파일에서 읽어온 데이터의 헤더가 유효한지 검증
-    assertValidMappedHeaders(stagedRows, transactionType);
+    assertValidMappedHeaders(stagedRows, REQUIRED_CSV_HEADERS[transactionType]);
 
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
@@ -322,7 +277,7 @@ define([
     const stagingFileId = script.getParameter({ name: CSV_FILE_ID_PARAM });
     const stagingFile = stagingFileId ? file.load({ id: stagingFileId }) : null;
     const stagedRows = loadStagedRows(stagingFileId);
-    const stagedRowsByLine = csvUtils.indexStagedRowsByLine(stagedRows);
+    const stagedRowsByLine = indexStagedRowsByLine(stagedRows);
     let successCount = 0;
     let errorCount = 0;
     const errorRows = [];
@@ -360,7 +315,7 @@ define([
      */
     let errorFileId = null;
     if (errorRows.length > 0 && stagingFile) {
-      const errorCsvContents = csvUtils.buildErrorReportCsvContents(
+      const errorCsvContents = buildErrorReportCsvContents(
         errorRows,
         stagedRowsByLine,
       );
@@ -371,7 +326,7 @@ define([
           JSON.stringify(stagedRowsByLine[errorRows[0].lineNumber] || {}),
       );
 
-      errorFileId = csvUtils.saveErrorReportFile(file, {
+      errorFileId = saveErrorReportFile(file, {
         folderId: stagingFile.folder,
         stagingFileId: stagingFileId,
         errorPrefix: RESULT_ERROR_PREFIX,
@@ -403,7 +358,7 @@ define([
     }
 
     if (stagingFile) {
-      csvUtils.saveProcessingSummaryFile(file, {
+      saveProcessingSummaryFile(file, {
         folderId: stagingFile.folder,
         stagingFileId: stagingFileId,
         summaryPrefix: RESULT_SUMMARY_PREFIX,

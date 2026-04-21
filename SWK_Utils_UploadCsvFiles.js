@@ -301,6 +301,59 @@ define(["N/search"], (search) => {
 
   /** NetSuite 레코드에 값 설정 관련 유틸리티 함수 모음 END */
 
+  /** CSV header validation / error formatting START */
+
+  const getHeaderLabel = (headerConfig) =>
+    Array.isArray(headerConfig) ? headerConfig.join(" or ") : headerConfig;
+
+  const getHeaderAliases = (headerConfig) =>
+    Array.isArray(headerConfig) ? headerConfig : [headerConfig];
+
+  const validateMappedHeaders = (stagedRows, requiredHeaders) => {
+    const firstRowData =
+      (stagedRows && stagedRows[0] && stagedRows[0].rowData) || {};
+    const uploadedHeaders = Object.keys(firstRowData);
+
+    if (!stagedRows || stagedRows.length === 0) {
+      return ["Uploaded CSV has no data rows."];
+    }
+
+    if (uploadedHeaders.length === 0) {
+      return ["Uploaded CSV has no mapped headers."];
+    }
+
+    return (requiredHeaders || [])
+      .filter((headerConfig) =>
+        getHeaderAliases(headerConfig).every(
+          (header) => uploadedHeaders.indexOf(header) === -1,
+        ),
+      )
+      .map((headerConfig) => "Missing column: " + getHeaderLabel(headerConfig));
+  };
+
+  const assertValidMappedHeaders = (stagedRows, requiredHeaders) => {
+    const errors = validateMappedHeaders(stagedRows, requiredHeaders);
+
+    if (errors.length > 0) {
+      throw new Error("CSV header validation failed.\n" + errors.join("\n"));
+    }
+  };
+
+  const getErrorDisplayMessage = (error) => {
+    let message = String(error || "");
+
+    try {
+      const parsedError = JSON.parse(message);
+      message = parsedError.message || parsedError.name || message;
+    } catch (e) {
+      // NetSuite summary errors are usually JSON strings, but plain text is OK.
+    }
+
+    return message.replace(/^Error:\s*/, "").replace(/\s+\[[\s\S]*\]$/, "");
+  };
+
+  /** CSV header validation / error formatting END */
+
   return {
     parseCsvLine,
     escapeHtml,
@@ -319,5 +372,10 @@ define(["N/search"], (search) => {
     buildErrorReportCsvContents,
     saveErrorReportFile,
     saveProcessingSummaryFile,
+    getHeaderLabel,
+    getHeaderAliases,
+    validateMappedHeaders,
+    assertValidMappedHeaders,
+    getErrorDisplayMessage,
   };
 });
