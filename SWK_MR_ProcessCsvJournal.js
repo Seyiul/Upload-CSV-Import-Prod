@@ -6,7 +6,8 @@
  *
  *  * Version    Date            Author           Remarks
  * ----------- -------------   --------------    --------------------------------------
- * 1.00         2026-04-15        Seulyi           Initial development
+ * 1.00         2026-04-13        Seulyi           Initial development
+ * 1.01         2026-04-21        Seulyi           Added header validation and error handling improvements
  */
 define([
   "N/file",
@@ -20,6 +21,28 @@ define([
   const TRANSACTION_TYPE_PARAM_JN = "custscript_swk_csv_tran_type_jn";
   const { RECORD_TYPES, RESULT_SUMMARY_PREFIX, RESULT_ERROR_PREFIX } =
     uploadCsvConstants;
+
+  const {
+    setBodyValueIfPresent,
+    setBodyTextIfPresent,
+    parseDateValue,
+    parseNumberValue,
+    hasValue,
+    escapeCsvValue,
+    buildCsvLine,
+    assertValidMappedHeaders,
+    indexStagedRowsByLine,
+    getErrorDisplayMessage,
+    buildErrorReportCsvContents,
+    saveErrorReportFile,
+    saveProcessingSummaryFile,
+    setCurrentLineValueIfPresent,
+    setCurrentLineTextIfPresent,
+    findLocationIdByValue,
+    getHeaderLabel,
+    getHeaderAliases,
+    validateMappedHeaders,
+  } = csvUtils;
 
   const createJournalRecord = (journalRows) => {
     const firstRowData =
@@ -37,37 +60,29 @@ define([
     });
 
     // Main Body 필드 설정
-    csvUtils.setBodyValueIfPresent(
-      rec,
-      "externalid",
-      firstRowData["External ID"],
-    );
-    csvUtils.setBodyValueIfPresent(
+    setBodyValueIfPresent(rec, "externalid", firstRowData["External ID"]);
+    setBodyValueIfPresent(
       rec,
       "trandate",
-      csvUtils.parseDateValue(firstRowData["Date"]),
+      parseDateValue(firstRowData["Date"]),
     );
-    csvUtils.setBodyTextIfPresent(
-      rec,
-      "subsidiary",
-      firstRowData["Subsidiary"],
-    );
-    csvUtils.setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
-    csvUtils.setBodyValueIfPresent(
+    setBodyTextIfPresent(rec, "subsidiary", firstRowData["Subsidiary"]);
+    setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
+    setBodyValueIfPresent(
       rec,
       "reversaldate",
-      csvUtils.parseDateValue(firstRowData["Reversal Date"]),
+      parseDateValue(firstRowData["Reversal Date"]),
     );
-    csvUtils.setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
-    csvUtils.setBodyTextIfPresent(
+    setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
+    setBodyTextIfPresent(
       rec,
       "custbody_swk_transcategory",
       firstRowData["Transaction Category"],
     );
-    csvUtils.setBodyValueIfPresent(
+    setBodyValueIfPresent(
       rec,
       "exchangerate",
-      csvUtils.parseNumberValue(firstRowData["Exchange Rate"]),
+      parseNumberValue(firstRowData["Exchange Rate"]),
     );
 
     // Journal Entry 라인 설정
@@ -86,43 +101,28 @@ define([
 
       rec.selectNewLine({ sublistId: "line" });
 
-      csvUtils.setCurrentLineTextIfPresent(
-        rec,
-        "line",
-        "account",
-        rowData["Account"],
-      );
-      csvUtils.setCurrentLineTextIfPresent(
+      setCurrentLineTextIfPresent(rec, "line", "account", rowData["Account"]);
+      setCurrentLineTextIfPresent(
         rec,
         "line",
         "department",
         rowData["Department"],
       );
-      csvUtils.setCurrentLineValueIfPresent(
+      setCurrentLineValueIfPresent(
         rec,
         "line",
         "debit",
-        csvUtils.parseNumberValue(rowData["Debit"]),
+        parseNumberValue(rowData["Debit"]),
       );
-      csvUtils.setCurrentLineValueIfPresent(
+      setCurrentLineValueIfPresent(
         rec,
         "line",
         "credit",
-        csvUtils.parseNumberValue(rowData["Credit"]),
+        parseNumberValue(rowData["Credit"]),
       );
-      csvUtils.setCurrentLineTextIfPresent(
-        rec,
-        "line",
-        "entity",
-        rowData["Name"],
-      );
-      csvUtils.setCurrentLineValueIfPresent(
-        rec,
-        "line",
-        "memo",
-        rowData["Memo(line)"],
-      );
-      csvUtils.setCurrentLineTextIfPresent(
+      setCurrentLineTextIfPresent(rec, "line", "entity", rowData["Name"]);
+      setCurrentLineValueIfPresent(rec, "line", "memo", rowData["Memo(line)"]);
+      setCurrentLineTextIfPresent(
         rec,
         "line",
         "custcol_swk_project_line",
@@ -176,6 +176,10 @@ define([
     }
 
     const stagedRows = loadStagedRows(fileId, transactionType);
+
+    // CSV 파일에서 읽어온 데이터의 헤더가 유효한지 검증
+    assertValidMappedHeaders(stagedRows, REQUIRED_CSV_HEADERS[transactionType]);
+
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
@@ -256,7 +260,7 @@ define([
       "fileId=" + stagingFileId + ", transactionType=" + transactionType,
     );
     const stagedRows = loadStagedRows(stagingFileId, transactionType);
-    const stagedRowsByLine = csvUtils.indexStagedRowsByLine(stagedRows);
+    const stagedRowsByLine = indexStagedRowsByLine(stagedRows);
     let successCount = 0;
     let errorCount = 0;
     const errorRows = [];
@@ -281,7 +285,7 @@ define([
      */
     let errorFileId = null;
     if (errorRows.length > 0 && stagingFile) {
-      const errorCsvContents = csvUtils.buildErrorReportCsvContents(
+      const errorCsvContents = buildErrorReportCsvContents(
         errorRows,
         stagedRowsByLine,
       );
@@ -292,7 +296,7 @@ define([
           JSON.stringify(stagedRowsByLine[errorRows[0].lineNumber] || {}),
       );
 
-      errorFileId = csvUtils.saveErrorReportFile(file, {
+      errorFileId = saveErrorReportFile(file, {
         folderId: stagingFile.folder,
         stagingFileId: stagingFileId,
         errorPrefix: RESULT_ERROR_PREFIX,
@@ -324,7 +328,7 @@ define([
     }
 
     if (stagingFile) {
-      csvUtils.saveProcessingSummaryFile(file, {
+      saveProcessingSummaryFile(file, {
         folderId: stagingFile.folder,
         stagingFileId: stagingFileId,
         summaryPrefix: RESULT_SUMMARY_PREFIX,
