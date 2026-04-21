@@ -13,18 +13,12 @@ define([
   "N/record",
   "N/runtime",
   "./SWK_Utils_UploadCsvFiles",
-], (file, log, record, runtime, csvUtils) => {
+  "./SWK_Constants_UploadCsv",
+], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_iv";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_iv";
-  const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
-  const RESULT_ERROR_PREFIX = "swk_mr_errors_";
-
-  const RECORD_TYPES = {
-    PO: "purchaseorder",
-    BILL: "vendorbill",
-    INVOICE: "invoice",
-    JOURNAL: "journalentry",
-  };
+  const { RECORD_TYPES, RESULT_SUMMARY_PREFIX, RESULT_ERROR_PREFIX } =
+    uploadCsvConstants;
 
   const FIELD_PROJECT_BODY = "custbody_swk_project_mainsingle";
   const FIELD_PROJECT_LINE = "custcol_swk_project_line";

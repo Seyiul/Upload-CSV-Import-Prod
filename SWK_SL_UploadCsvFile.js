@@ -17,6 +17,7 @@ define([
   "N/redirect",
   "N/url",
   "N/runtime",
+  "./SWK_Constants_UploadCsv",
   "./SWK_Utils_UploadCsvFiles",
 ], (
   serverWidget,
@@ -27,71 +28,17 @@ define([
   redirect,
   url,
   runtime,
+  uploadCsvConstants,
   csvUtils,
 ) => {
-  const SUITELET_SCRIPT_ID = "customscript_swk_sl_uploadcsvfile";
-  const SUITELET_DEPLOYMENT_ID = "customdeploy_swk_sl_uploadcsvfile";
-
-  const ACTIONS = {
-    taskStatus: "taskstatus",
-    downloadErrorCsv: "downloaderrorcsv",
-  };
-
-  const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
-
-  const TEMPLATE_FILE_ID_PARAMS = {
-    PO: "custscript_swk_po_template_file_id",
-    BILL: "custscript_swk_bill_template_file_id",
-    INVOICE: "custscript_swk_invoice_template_file_id",
-    JOURNAL: "custscript_swk_journal_template_file_id",
-  };
-
-  const TRANSACTION_CONFIG = {
-    PO: {
-      templateName: "PO Template.csv",
-      task: {
-        scriptId: "customscript_swk_mr_processcsvpo",
-        deploymentId: "customdeploy_swk_mr_processcsvpo",
-        params: {
-          fileId: "custscript_swk_csv_file_id_po",
-          transactionType: "custscript_swk_csv_tran_type_po",
-        },
-      },
-    },
-    BILL: {
-      templateName: "Bill Expense Template.csv",
-      task: {
-        scriptId: "customscript_swk_mr_processcsvbill",
-        deploymentId: "customdeploy_swk_mr_processcsvbill",
-        params: {
-          fileId: "custscript_swk_csv_file_id",
-          transactionType: "custscript_swk_csv_tran_type",
-        },
-      },
-    },
-    INVOICE: {
-      templateName: "Invoice Template.csv",
-      task: {
-        scriptId: "customscript_swk_mr_processcsvinvoice",
-        deploymentId: "customdeploy_swk_mr_processcsvinvoice",
-        params: {
-          fileId: "custscript_swk_csv_file_id_iv",
-          transactionType: "custscript_swk_csv_tran_type_iv",
-        },
-      },
-    },
-    JOURNAL: {
-      templateName: "Journal Template.csv",
-      task: {
-        scriptId: "customscript_swk_mr_processcsvjournal",
-        deploymentId: "customdeploy_swk_mr_processcsvjournal",
-        params: {
-          fileId: "custscript_swk_csv_file_id_jn",
-          transactionType: "custscript_swk_csv_tran_type_jn",
-        },
-      },
-    },
-  };
+  const {
+    SUITELET_SCRIPT_ID,
+    SUITELET_DEPLOYMENT_ID,
+    ACTIONS,
+    RESULT_SUMMARY_PREFIX,
+    TEMPLATE_FILE_ID_PARAMS,
+    TRANSACTION_CONFIG,
+  } = uploadCsvConstants;
 
   // transactionType에 따른 템플릿 파일 ID 및 Map/Reduce Task 설정 return
   const getTransactionConfig = (transactionType) => {
@@ -247,7 +194,7 @@ define([
     if (taskId) {
       form.addButton({
         id: "custpage_refresh_status",
-        label: "Refresh Status",
+        label: "새로고침",
         functionName: "refreshStatus",
       });
     }
@@ -368,15 +315,23 @@ define([
       "Task completed with summary: " + JSON.stringify(summary),
     );
 
+    const detailMessage =
+      summary.message ||
+      ((summary.errors || []).length > 0
+        ? (summary.errors || []).join("\n")
+        : "");
+    const resultMessage =
+      `Status: ${taskStatus.status}\n` +
+      `Success: ${summary.successCount || 0}\n` +
+      `Errors: ${summary.errorCount || 0}` +
+      (detailMessage ? `\n\n${detailMessage}` : "");
+
     return {
       title:
         summary.errorCount > 0
           ? "Upload Completed With Errors"
           : "Upload Completed",
-      message:
-        `Status: ${taskStatus.status}\n` +
-        `Success: ${summary.successCount || 0}\n` +
-        `Errors: ${summary.errorCount || 0}`,
+      message: resultMessage,
       status: taskStatus.status,
       errorFileId: summary.errorFileId || "",
       successCount: summary.successCount || 0,

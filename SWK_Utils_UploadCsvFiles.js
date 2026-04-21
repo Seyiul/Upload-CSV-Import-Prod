@@ -274,6 +274,8 @@ define(["N/search"], (search) => {
       successCount,
       errorCount,
       errorFileId,
+      message,
+      errors,
     } = options;
 
     if (!folderId || !stagingFileId || !summaryPrefix) {
@@ -287,6 +289,8 @@ define(["N/search"], (search) => {
         successCount: successCount || 0,
         errorCount: errorCount || 0,
         errorFileId: errorFileId || "",
+        message: message || "",
+        errors: errors || [],
       }),
       encoding: fileModule.Encoding.UTF8,
       folder: folderId,

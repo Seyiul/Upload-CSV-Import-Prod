@@ -16,17 +16,65 @@ define([
   "N/record",
   "N/runtime",
   "./SWK_Utils_UploadCsvFiles",
-], (file, log, record, runtime, csvUtils) => {
+  "./SWK_Constants_UploadCsv",
+], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
-  const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
-  const RESULT_ERROR_PREFIX = "swk_mr_errors_";
+  const {
+    RECORD_TYPES,
+    REQUIRED_CSV_HEADERS,
+    RESULT_SUMMARY_PREFIX,
+    RESULT_ERROR_PREFIX,
+  } = uploadCsvConstants;
 
-  const RECORD_TYPES = {
-    PO: "purchaseorder",
-    BILL: "vendorbill",
-    INVOICE: "invoice",
-    JOURNAL: "journalentry",
+  const getHeaderLabel = (headerConfig) =>
+    Array.isArray(headerConfig) ? headerConfig.join(" or ") : headerConfig;
+
+  const getHeaderAliases = (headerConfig) =>
+    Array.isArray(headerConfig) ? headerConfig : [headerConfig];
+
+  const validateMappedHeaders = (stagedRows, transactionType) => {
+    const requiredHeaders = REQUIRED_CSV_HEADERS[transactionType] || [];
+    const firstRowData =
+      (stagedRows && stagedRows[0] && stagedRows[0].rowData) || {};
+    const uploadedHeaders = Object.keys(firstRowData);
+
+    if (!stagedRows || stagedRows.length === 0) {
+      return ["Uploaded CSV has no data rows."];
+    }
+
+    if (uploadedHeaders.length === 0) {
+      return ["Uploaded CSV has no mapped headers."];
+    }
+
+    return requiredHeaders
+      .filter((headerConfig) =>
+        getHeaderAliases(headerConfig).every(
+          (header) => uploadedHeaders.indexOf(header) === -1,
+        ),
+      )
+      .map((headerConfig) => "Missing column: " + getHeaderLabel(headerConfig));
+  };
+
+  const assertValidMappedHeaders = (stagedRows, transactionType) => {
+    const errors = validateMappedHeaders(stagedRows, transactionType);
+
+    if (errors.length > 0) {
+      throw new Error("CSV header validation failed.\n" + errors.join("\n"));
+    }
+  };
+
+  const getErrorDisplayMessage = (error) => {
+    let message = String(error || "");
+
+    try {
+      const parsedError = JSON.parse(message);
+      message = parsedError.message || parsedError.name || message;
+    } catch (e) {
+      // NetSuite summary errors are usually JSON strings, but plain text is OK.
+    }
+
+    return message.replace(/^Error:\s*/, "").replace(/\s+\[[\s\S]*\]$/, "");
   };
 
   const createBillRecord = (billRows) => {
@@ -196,6 +244,10 @@ define([
     }
 
     const stagedRows = loadStagedRows(fileId, transactionType);
+
+    // CSV 파일에서 읽어온 데이터의 헤더가 유효한지 검증
+    assertValidMappedHeaders(stagedRows, transactionType);
+
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
@@ -274,6 +326,7 @@ define([
     let successCount = 0;
     let errorCount = 0;
     const errorRows = [];
+    const summaryErrors = [];
 
     summaryContext.output.iterator().each((key, value) => {
       if (key === "success") {
@@ -285,8 +338,20 @@ define([
       return true;
     });
 
+    if (summaryContext.inputSummary && summaryContext.inputSummary.error) {
+      const inputError = getErrorDisplayMessage(
+        summaryContext.inputSummary.error,
+      );
+      errorCount += 1;
+      summaryErrors.push(inputError);
+      log.error("inputSummary", inputError);
+    }
+
     summaryContext.mapSummary.errors.iterator().each((key, error) => {
-      log.error("mapSummary", "Row " + key + ": " + error);
+      const mapError = "Row " + key + ": " + getErrorDisplayMessage(error);
+      errorCount += 1;
+      summaryErrors.push(mapError);
+      log.error("mapSummary", mapError);
       return true;
     });
 
@@ -345,6 +410,8 @@ define([
         successCount: successCount,
         errorCount: errorCount,
         errorFileId: errorFileId,
+        message: summaryErrors.join("\n"),
+        errors: summaryErrors,
       });
     }
 
