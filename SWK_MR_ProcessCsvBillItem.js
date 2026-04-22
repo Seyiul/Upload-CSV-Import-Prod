@@ -1,13 +1,14 @@
-/**
+﻿/**
  * @NApiVersion 2.1
  * @NScriptType MapReduceScript
  *
- * Description: CSV 파일에서 Journal Entry 데이터를 읽어와 NetSuite에 Journal Entry 레코드로 생성하는 Map/Reduce 스크립트
+ * Description: CSV 파일에서 Vendor Bill 데이터를 읽어와 NetSuite에 Vendor Bill 레코드로 생성하는 Map/Reduce 스크립트
  *
  *  * Version    Date            Author           Remarks
  * ----------- -------------   --------------    --------------------------------------
  * 1.00         2026-04-13        Seulyi           Initial development
  * 1.01         2026-04-21        Seulyi           Added header validation and error handling improvements
+ *
  */
 define([
   "N/file",
@@ -17,8 +18,8 @@ define([
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
 ], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
-  const CSV_FILE_ID_PARAM_JN = "custscript_swk_csv_file_id_jn";
-  const TRANSACTION_TYPE_PARAM_JN = "custscript_swk_csv_tran_type_jn";
+  const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
+  const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
   const {
     RECORD_TYPES,
     REQUIRED_CSV_HEADERS,
@@ -48,96 +49,65 @@ define([
     validateMappedHeaders,
   } = csvUtils;
 
-  const createJournalRecord = (journalRows) => {
-    const firstRowData =
-      (journalRows && journalRows[0] && journalRows[0].rowData) || {};
-    log.audit(
-      "createJournalRecord:start",
-      "externalId=" +
-        (firstRowData["External ID"] || "") +
-        ", lines=" +
-        ((journalRows && journalRows.length) || 0),
-    );
+  const FIELD_PROJECT_BODY = "custbody_swk_project_mainsingle";
+  const FIELD_PROJECT_LINE = "custcol_swk_project_line";
+  const FIELD_PROJECT_SEG = "cseg_swk_lapopjt";
+
+  const createBillRecord = (billRows) => {
+    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+
+    // Body 필드 매핑
     const rec = record.create({
-      type: record.Type.JOURNAL_ENTRY,
+      type: record.Type.VENDOR_BILL,
       isDynamic: true,
     });
+    const locationId = findLocationIdByValue(firstRowData["Location"]);
 
-    // Main Body 필드 설정
-    setBodyValueIfPresent(rec, "externalid", firstRowData["External ID"]);
+    if (firstRowData["Location"] && !locationId) {
+      throw new Error("Location not found: " + firstRowData["Location"]);
+    }
+
+    setBodyValueIfPresent(rec, "externalid", firstRowData["EXTERNAL ID"]);
+    setBodyTextIfPresent(rec, "entity", firstRowData["Vendor"]);
     setBodyValueIfPresent(
       rec,
       "trandate",
       parseDateValue(firstRowData["Date"]),
     );
-    setBodyTextIfPresent(rec, "subsidiary", firstRowData["Subsidiary"]);
+    setBodyValueIfPresent(rec, "tranid", firstRowData["Reference No."]);
     setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
-    setBodyValueIfPresent(
-      rec,
-      "reversaldate",
-      parseDateValue(firstRowData["Reversal Date"]),
-    );
+    setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
+    setBodyTextIfPresent(rec, "department", firstRowData["Department"]);
+    setBodyValueIfPresent(rec, "location", locationId);
     setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
     setBodyTextIfPresent(
       rec,
       "custbody_swk_transcategory",
       firstRowData["Transaction Category"],
     );
+
+    setBodyTextIfPresent(
+      rec,
+      FIELD_PROJECT_BODY,
+      firstRowData["Project(Main, Single)"],
+    );
+
     setBodyValueIfPresent(
       rec,
       "exchangerate",
       parseNumberValue(firstRowData["Exchange Rate"]),
     );
 
-    // Journal Entry 라인 설정
-    (journalRows || []).forEach((journalRow) => {
-      const rowData = journalRow.rowData || {};
+    // CSV의 각 행을 Vendor Bill의 Item 라인으로 매핑
+    (billRows || []).forEach((row) => {
+      const rowData = row.rowData || {};
 
-      log.audit(
-        "createJournalRecord:line",
-        "Processing line with Account: " +
-          rowData["Account"] +
-          ", Debit: " +
-          rowData["Debit"] +
-          ", Credit: " +
-          rowData["Credit"],
-      );
+      rec.selectNewLine({ sublistId: "item" });
 
-      rec.selectNewLine({ sublistId: "line" });
-
-      setCurrentLineTextIfPresent(rec, "line", "account", rowData["Account"]);
-      setCurrentLineTextIfPresent(
-        rec,
-        "line",
-        "department",
-        rowData["Department"],
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "line",
-        "debit",
-        parseNumberValue(rowData["Debit"]),
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "line",
-        "credit",
-        parseNumberValue(rowData["Credit"]),
-      );
-      setCurrentLineTextIfPresent(rec, "line", "entity", rowData["Name"]);
-      setCurrentLineValueIfPresent(rec, "line", "memo", rowData["Memo(line)"]);
-      setCurrentLineTextIfPresent(
-        rec,
-        "line",
-        "custcol_swk_project_line",
-        rowData["Project(Line)"],
-      );
-      rec.commitLine({ sublistId: "line" });
+      rec.commitLine({ sublistId: "item" });
     });
 
-    const recordId = rec.save();
-    log.audit("createJournalRecord:saved", "recordId=" + recordId);
-    return recordId;
+    return rec.save();
   };
 
   const loadStagedRows = (fileId, transactionType) => {
@@ -147,6 +117,8 @@ define([
 
     const csvFile = file.load({ id: fileId });
     csvFile.encoding = file.Encoding.UTF8;
+
+    // CSV 파일에서 내용을 읽어와 JSON으로 파싱
     const stagedContents = (csvFile.getContents() || "")
       .replace(/^\uFEFF/, "")
       .trim();
@@ -155,6 +127,7 @@ define([
     const normalizedRows = Array.isArray(parsedRows)
       ? parsedRows
       : [parsedRows];
+
     const stagedRows = normalizedRows.map((row, index) => ({
       lineNumber: row.lineNumber || index + 2,
       transactionType: row.transactionType || transactionType,
@@ -166,9 +139,9 @@ define([
 
   const getInputData = () => {
     const script = runtime.getCurrentScript();
-    const fileId = script.getParameter({ name: CSV_FILE_ID_PARAM_JN });
+    const fileId = script.getParameter({ name: CSV_FILE_ID_PARAM });
     const transactionType = script.getParameter({
-      name: TRANSACTION_TYPE_PARAM_JN,
+      name: TRANSACTION_TYPE_PARAM,
     });
     const recordType = RECORD_TYPES[transactionType];
 
@@ -194,9 +167,9 @@ define([
 
   const map = (mapContext) => {
     const input = JSON.parse(mapContext.value);
-
     const { lineNumber, rowData } = input;
-    const externalId = rowData["External ID"];
+
+    const externalId = rowData["EXTERNAL ID"];
 
     if (!externalId) {
       mapContext.write({
@@ -209,7 +182,7 @@ define([
       return;
     }
 
-    // external id를 키로, 전체 행 데이터를 값으로 전달
+    //external id를 키로, 전체 행 데이터를 값으로 전달
     mapContext.write({
       key: String(externalId),
       value: JSON.stringify(input),
@@ -218,10 +191,10 @@ define([
   };
 
   const reduce = (reduceContext) => {
-    const journalRows = reduceContext.values.map((value) => JSON.parse(value));
+    const billRows = reduceContext.values.map((value) => JSON.parse(value));
 
     try {
-      const recordId = createJournalRecord(journalRows);
+      const recordId = createBillRecord(billRows);
 
       reduceContext.write({
         key: "success",
@@ -230,6 +203,7 @@ define([
           recordId: recordId,
         }),
       });
+
       log.audit(
         "reduce:success",
         "key=" + reduceContext.key + ", recordId=" + recordId,
@@ -237,14 +211,14 @@ define([
     } catch (e) {
       log.error(
         "reduce",
-        "Error processing journal " + reduceContext.key + ": " + e.message,
+        "Error processing row " + reduceContext.key + ": " + e.message,
       );
 
-      journalRows.forEach((journalRow) => {
+      billRows.forEach((row) => {
         reduceContext.write({
           key: "error",
           value: JSON.stringify({
-            lineNumber: journalRow.lineNumber,
+            lineNumber: row.lineNumber,
             message: e.message,
           }),
         });
@@ -254,12 +228,9 @@ define([
 
   const summarize = (summaryContext) => {
     const script = runtime.getCurrentScript();
-    const stagingFileId = script.getParameter({ name: CSV_FILE_ID_PARAM_JN });
+    const stagingFileId = script.getParameter({ name: CSV_FILE_ID_PARAM });
     const stagingFile = stagingFileId ? file.load({ id: stagingFileId }) : null;
-    const transactionType = script.getParameter({
-      name: TRANSACTION_TYPE_PARAM_JN,
-    });
-    const stagedRows = loadStagedRows(stagingFileId, transactionType);
+    const stagedRows = loadStagedRows(stagingFileId);
     const stagedRowsByLine = indexStagedRowsByLine(stagedRows);
     let successCount = 0;
     let errorCount = 0;
@@ -280,7 +251,6 @@ define([
       const inputError = getErrorDisplayMessage(
         summaryContext.inputSummary.error,
       );
-
       errorCount += 1;
       summaryErrors.push(inputError);
       log.error("inputSummary", inputError);
@@ -295,7 +265,7 @@ define([
     });
 
     /**
-     * 오류가 있는 경우, 오류 메시지와 원본 내용을 포함한 CSV 파일로 저장
+     * 오류가 있는 경우, 오류 메시지와 함께 새로운 CSV 파일로 저장
      */
     let errorFileId = null;
     if (errorRows.length > 0 && stagingFile) {
@@ -354,7 +324,7 @@ define([
       });
     }
 
-    // 임시로 업로드한 파일 삭제
+    // 임시로 저장한 파일 삭제
     if (stagingFileId) {
       try {
         file.delete({ id: stagingFileId });
@@ -379,5 +349,10 @@ define([
     );
   };
 
-  return { getInputData, map, reduce, summarize };
+  return {
+    getInputData: getInputData,
+    map: map,
+    reduce: reduce,
+    summarize: summarize,
+  };
 });

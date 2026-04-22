@@ -138,6 +138,8 @@ define([], () => {
       "Amort. Schedule",
       "Amort. Start",
       "Amort. End",
+      "Project(Line)",
+      "Project(Seg)",
     ],
     INVOICE: [
       ["External ID", "EXTERNAL ID"],

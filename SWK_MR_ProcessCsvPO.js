@@ -19,8 +19,12 @@ define([
 ], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_po";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_po";
-  const { RECORD_TYPES, RESULT_SUMMARY_PREFIX, RESULT_ERROR_PREFIX } =
-    uploadCsvConstants;
+  const {
+    RECORD_TYPES,
+    REQUIRED_CSV_HEADERS,
+    RESULT_SUMMARY_PREFIX,
+    RESULT_ERROR_PREFIX,
+  } = uploadCsvConstants;
 
   const {
     setBodyValueIfPresent,
@@ -281,6 +285,7 @@ define([
     let successCount = 0;
     let errorCount = 0;
     const errorRows = [];
+    const summaryErrors = [];
 
     summaryContext.output.iterator().each((key, value) => {
       if (key === "success") {
@@ -291,9 +296,21 @@ define([
       }
       return true;
     });
+    if (summaryContext.inputSummary && summaryContext.inputSummary.error) {
+      const inputError = getErrorDisplayMessage(
+        summaryContext.inputSummary.error,
+      );
+
+      errorCount += 1;
+      summaryErrors.push(inputError);
+      log.error("inputSummary", inputError);
+    }
 
     summaryContext.mapSummary.errors.iterator().each((key, error) => {
-      log.error("mapSummary", "Row " + key + ": " + error);
+      const mapError = "Row " + key + ": " + getErrorDisplayMessage(error);
+      errorCount += 1;
+      summaryErrors.push(mapError);
+      log.error("mapSummary", mapError);
       return true;
     });
 

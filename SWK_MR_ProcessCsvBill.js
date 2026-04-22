@@ -49,6 +49,10 @@ define([
     validateMappedHeaders,
   } = csvUtils;
 
+  const FIELD_PROJECT_BODY = "custbody_swk_project_mainsingle";
+  const FIELD_PROJECT_LINE = "custcol_swk_project_line";
+  const FIELD_PROJECT_SEG = "cseg_swk_lapopjt";
+
   const createBillRecord = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
 
@@ -81,6 +85,13 @@ define([
       "custbody_swk_transcategory",
       firstRowData["Transaction Category"],
     );
+
+    setBodyTextIfPresent(
+      rec,
+      FIELD_PROJECT_BODY,
+      firstRowData["Project(Main, Single)"],
+    );
+
     setBodyValueIfPresent(
       rec,
       "exchangerate",
@@ -149,6 +160,19 @@ define([
         "expense",
         "amortizationenddate",
         parseDateValue(rowData["Amort. End"]),
+      );
+
+      setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        FIELD_PROJECT_LINE,
+        rowData["Project(Line)"],
+      );
+      setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        FIELD_PROJECT_SEG,
+        rowData["Project(Seg)"],
       );
       rec.commitLine({ sublistId: "expense" });
     });
