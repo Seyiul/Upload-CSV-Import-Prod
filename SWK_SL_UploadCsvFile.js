@@ -159,9 +159,11 @@ define([
         text:
           type === "BILL"
             ? "BILL (Expense)"
-            : type === "PO"
-              ? "Purchase Order"
-              : type,
+            : type === "BILL_ITEM"
+              ? "BILL (Item)"
+              : type === "PO"
+                ? "Purchase Order"
+                : type,
       });
     });
 

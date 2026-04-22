@@ -53,6 +53,15 @@ define([
   const FIELD_PROJECT_LINE = "custcol_swk_project_line";
   const FIELD_PROJECT_SEG = "cseg_swk_lapopjt";
 
+  const parseCheckboxValue = (value) => {
+    if (!hasValue(value)) {
+      return null;
+    }
+
+    const normalizedValue = String(value).trim().toUpperCase();
+    return normalizedValue === "T" || normalizedValue === "TRUE";
+  };
+
   const createBillRecord = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
 
@@ -67,19 +76,34 @@ define([
       throw new Error("Location not found: " + firstRowData["Location"]);
     }
 
-    setBodyValueIfPresent(rec, "externalid", firstRowData["EXTERNAL ID"]);
+    setBodyValueIfPresent(rec, "externalid", firstRowData["External ID"]);
     setBodyTextIfPresent(rec, "entity", firstRowData["Vendor"]);
+    setBodyValueIfPresent(
+      rec,
+      "custbody_swk_bill_vendorqual",
+      parseCheckboxValue(firstRowData["Qualified Invoice Issuer"]),
+    );
+    setBodyValueIfPresent(
+      rec,
+      "custbody_swk_wht_update",
+      parseCheckboxValue(firstRowData["Manual Update"]),
+    );
     setBodyValueIfPresent(
       rec,
       "trandate",
       parseDateValue(firstRowData["Date"]),
+    );
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_bill_whtamt",
+      firstRowData["WHT Amount"],
     );
     setBodyValueIfPresent(rec, "tranid", firstRowData["Reference No."]);
     setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
     setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
     setBodyTextIfPresent(rec, "department", firstRowData["Department"]);
     setBodyValueIfPresent(rec, "location", locationId);
-    setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
+    setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
     setBodyTextIfPresent(
       rec,
       "custbody_swk_transcategory",
@@ -90,12 +114,6 @@ define([
       rec,
       FIELD_PROJECT_BODY,
       firstRowData["Project(Main, Single)"],
-    );
-
-    setBodyValueIfPresent(
-      rec,
-      "exchangerate",
-      parseNumberValue(firstRowData["Exchange Rate"]),
     );
 
     // CSV의 각 행을 Vendor Bill의 Expense 라인으로 매핑
@@ -119,10 +137,9 @@ define([
         rec,
         "expense",
         "amount",
-        parseNumberValue(rowData["Amount"]) ||
-          (parseNumberValue(rowData["Quantity"]) || 0) *
-            (parseNumberValue(rowData["Rate"]) || 0),
+        parseNumberValue(rowData["Amount"]),
       );
+
       setCurrentLineTextIfPresent(
         rec,
         "expense",
@@ -142,6 +159,12 @@ define([
         "expense",
         "tax1amt",
         parseNumberValue(rowData["Tax AMT"]),
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "custcol_swk_billline_wht",
+        parseCheckboxValue(rowData["Apply WHT"]),
       );
       setCurrentLineTextIfPresent(
         rec,
@@ -173,6 +196,12 @@ define([
         "expense",
         FIELD_PROJECT_SEG,
         rowData["Project(Seg)"],
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "amortizationresidual",
+        parseNumberValue(rowData["Residual"]),
       );
       rec.commitLine({ sublistId: "expense" });
     });
@@ -239,7 +268,7 @@ define([
     const input = JSON.parse(mapContext.value);
     const { lineNumber, rowData } = input;
 
-    const externalId = rowData["EXTERNAL ID"];
+    const externalId = rowData["External ID"];
 
     if (!externalId) {
       mapContext.write({

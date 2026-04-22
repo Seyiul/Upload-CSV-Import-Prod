@@ -18,6 +18,7 @@ define(["N/log", "N/url"], function (log, url) {
   const TEMPLATE_NAMES = {
     PO: "PO Template.csv",
     BILL: "Bill Template.csv",
+    BILL_ITEM: "Bill ITEM Template.csv",
     INVOICE: "Invoice Template.csv",
     JOURNAL: "Journal Template.csv",
   };

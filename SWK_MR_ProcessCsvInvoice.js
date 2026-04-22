@@ -85,7 +85,6 @@ define([
     );
     setBodyTextIfPresent(rec, FIELD_PROJECT_BODY, firstRowData["Project"]);
     setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
-    setBodyTextIfPresent(rec, "postingperiod", firstRowData["Posting Period"]);
     setBodyValueIfPresent(rec, "otherrefnum", firstRowData["PO #"]);
     setBodyValueIfPresent(
       rec,
@@ -141,7 +140,7 @@ define([
         rec,
         "item",
         "department",
-        rowData["Department(Line)"] || rowData["Department"],
+        rowData["Department(Line)"] || rowData["Department(Line)"],
       );
       setCurrentLineTextIfPresent(
         rec,
@@ -370,6 +369,8 @@ define([
         successCount: successCount,
         errorCount: errorCount,
         errorFileId: errorFileId,
+        message: summaryErrors.join("\n"),
+        errors: summaryErrors,
       });
     }
 

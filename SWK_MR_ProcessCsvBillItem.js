@@ -18,8 +18,8 @@ define([
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
 ], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
-  const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
-  const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
+  const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_billitem";
+  const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_billitem";
   const {
     RECORD_TYPES,
     REQUIRED_CSV_HEADERS,
@@ -53,6 +53,15 @@ define([
   const FIELD_PROJECT_LINE = "custcol_swk_project_line";
   const FIELD_PROJECT_SEG = "cseg_swk_lapopjt";
 
+  const parseCheckboxValue = (value) => {
+    if (!hasValue(value)) {
+      return null;
+    }
+
+    const normalizedValue = String(value).trim().toUpperCase();
+    return normalizedValue === "T" || normalizedValue === "TRUE";
+  };
+
   const createBillRecord = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
 
@@ -67,18 +76,39 @@ define([
       throw new Error("Location not found: " + firstRowData["Location"]);
     }
 
-    setBodyValueIfPresent(rec, "externalid", firstRowData["EXTERNAL ID"]);
+    setBodyValueIfPresent(rec, "externalid", firstRowData["External ID"]);
     setBodyTextIfPresent(rec, "entity", firstRowData["Vendor"]);
+    setBodyValueIfPresent(
+      rec,
+      "custbody_swk_bill_vendorqual",
+      parseCheckboxValue(firstRowData["Qualified Invoice Issuer"]),
+    );
+    setBodyValueIfPresent(
+      rec,
+      "custbody_swk_wht_update",
+      parseCheckboxValue(firstRowData["Manual Update"]),
+    );
     setBodyValueIfPresent(
       rec,
       "trandate",
       parseDateValue(firstRowData["Date"]),
+    );
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_bill_whtamt",
+      firstRowData["WHT Amount"],
     );
     setBodyValueIfPresent(rec, "tranid", firstRowData["Reference No."]);
     setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
     setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
     setBodyTextIfPresent(rec, "department", firstRowData["Department"]);
     setBodyValueIfPresent(rec, "location", locationId);
+    setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
+    setBodyValueIfPresent(
+      rec,
+      "duedate",
+      parseDateValue(firstRowData["Due Date"]),
+    );
     setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
     setBodyTextIfPresent(
       rec,
@@ -103,7 +133,87 @@ define([
       const rowData = row.rowData || {};
 
       rec.selectNewLine({ sublistId: "item" });
+      setCurrentLineTextIfPresent(rec, "item", "item", rowData["Item"]);
+      setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "description",
+        rowData["Description"],
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "amount",
+        parseNumberValue(rowData["Amount"]) ||
+          (parseNumberValue(rowData["Quantity"]) || 0) *
+            (parseNumberValue(rowData["Rate"]) || 0),
+      );
+      setCurrentLineTextIfPresent(rec, "item", "rate", rowData["Rate"]);
+      setCurrentLineTextIfPresent(rec, "item", "quantity", rowData["Quantity"]);
+      setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        "department",
+        rowData["Department(Line)"],
+      );
+      setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        "grossamount",
+        rowData["Gross Amt"],
+      );
+      setCurrentLineValueIfPresent(rec, "item", "location", locationId);
+      setCurrentLineTextIfPresent(rec, "item", "taxcode", rowData["Tax Code"]);
+      setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "tax1amt",
+        parseNumberValue(rowData["Tax AMT"]),
+      );
+      setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        "amortizationsched",
+        rowData["Amort. Schedule"],
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "custcol_swk_billline_wht",
+        parseCheckboxValue(rowData["Apply WHT"]),
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "amortizstartdate",
+        parseDateValue(rowData["Amort. Start"]),
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "amortizationenddate",
+        parseDateValue(rowData["Amort. End"]),
+      );
 
+      setCurrentLineValueIfPresent(
+        rec,
+        "item",
+        "amortizationresidual",
+        parseNumberValue(rowData["Residual"]),
+      );
+
+      setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        FIELD_PROJECT_LINE,
+        rowData["Project(Line)"],
+      );
+      setCurrentLineTextIfPresent(
+        rec,
+        "item",
+        FIELD_PROJECT_SEG,
+        rowData["Project(Seg)"],
+      );
       rec.commitLine({ sublistId: "item" });
     });
 
@@ -169,7 +279,7 @@ define([
     const input = JSON.parse(mapContext.value);
     const { lineNumber, rowData } = input;
 
-    const externalId = rowData["EXTERNAL ID"];
+    const externalId = rowData["External ID"];
 
     if (!externalId) {
       mapContext.write({

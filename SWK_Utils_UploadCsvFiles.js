@@ -377,5 +377,6 @@ define(["N/search"], (search) => {
     validateMappedHeaders,
     assertValidMappedHeaders,
     getErrorDisplayMessage,
+    hasValue,
   };
 });
