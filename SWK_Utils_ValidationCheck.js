@@ -34,9 +34,6 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       .filter((row) => {
         const rowData = row.rowData || {};
 
-        // log.debug("dept", rowData[departmentHeader]);
-        // log.debug("project", rowData[projectHeader]);
-
         return (
           !hasValue(rowData[departmentHeader]) &&
           !hasValue(rowData[projectHeader])
@@ -102,7 +99,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     return null;
   };
 
-  /** Transaction Category(예정원가/취소) */
+  /** Transaction Category (Not Confirmed / Cancel) */
   const isMainTransCatAcctMatched = (idCat, bUnconAcct) => {
     const LOG_TITLE = "isMainTransCatAcctMatched";
     const NOT_CONFIRMED_CAT = isNotConfirmedCat(idCat);
@@ -132,8 +129,137 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     );
   };
 
-  /* (1) Bill, Bill Credit 입력시에는 (1) Department (Line) 또는 (2) Project(Line) = Project (Seg)중 하나는 꼭 입력되어 있어야 함  
-  (2) Main의 Transaction Category Code 가 Code가 "Not Confirmed" , "Not Confirmed - Cancel" 이면 , Main의 Account, Line의 Account(Line)의 Unconfirmed Account(가계정) 
+  /** Tax Code */
+  const resolveInternalIdsByValue = (recordType, rawValues, filterNames) => {
+    const resolvedIds = {};
+
+    (rawValues || []).forEach((rawValue) => {
+      if (!hasValue(rawValue)) {
+        return;
+      }
+
+      const normalizedValue = String(rawValue).trim();
+
+      if (!Object.prototype.hasOwnProperty.call(resolvedIds, normalizedValue)) {
+        resolvedIds[normalizedValue] = resolveInternalId(
+          recordType,
+          normalizedValue,
+          filterNames,
+        );
+      }
+    });
+
+    return resolvedIds;
+  };
+
+  const getWrongTaxLineNumbers = (stagedRows) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+
+        return {
+          account: rowData["Expense Account"],
+          lineNumber: row.lineNumber || index + 2,
+          taxCode: rowData["Tax Code"],
+        };
+      })
+      .filter((row) => hasValue(row.account) && hasValue(row.taxCode));
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    const accountIdByValue = resolveInternalIdsByValue(
+      search.Type.ACCOUNT,
+      candidateRows.map((row) => row.account),
+      ["displayname", "name", "number"],
+    );
+    const accountIds = Object.values(accountIdByValue).filter(hasValue);
+
+    if (accountIds.length === 0) {
+      return [];
+    }
+
+    const noTaxAccountIds = new Set();
+    search
+      .create({
+        type: search.Type.ACCOUNT,
+        filters: [["internalid", search.Operator.ANYOF, accountIds]],
+        columns: [
+          search.createColumn({ name: "internalid" }),
+          search.createColumn({ name: libConstants.FLDS.ACCT.FLAG }),
+        ],
+      })
+      .run()
+      .each((result) => {
+        const accountFlagText =
+          result.getText({ name: libConstants.FLDS.ACCT.FLAG }) || "";
+
+        if (String(accountFlagText).trim().toLowerCase() === "no-tax account") {
+          noTaxAccountIds.add(String(result.getValue({ name: "internalid" })));
+        }
+
+        return true;
+      });
+
+    const noTaxRows = candidateRows.filter((row) =>
+      noTaxAccountIds.has(String(accountIdByValue[String(row.account).trim()])),
+    );
+
+    if (noTaxRows.length === 0) {
+      return [];
+    }
+
+    const taxCodeIdByValue = resolveInternalIdsByValue(
+      search.Type.SALES_TAX_ITEM,
+      noTaxRows.map((row) => row.taxCode),
+      ["itemid", "name"],
+    );
+    const taxCodeIds = Object.values(taxCodeIdByValue).filter(hasValue);
+
+    if (taxCodeIds.length === 0) {
+      return [];
+    }
+
+    const wrongTaxCodeIds = new Set();
+    search
+      .create({
+        type: search.Type.SALES_TAX_ITEM,
+        filters: [
+          ["internalid", search.Operator.ANYOF, taxCodeIds],
+          "AND",
+          [libConstants.FLDS.TAX_CODE.EXCLUDE, search.Operator.IS, "F"],
+        ],
+        columns: [search.createColumn({ name: "internalid" })],
+      })
+      .run()
+      .each((result) => {
+        wrongTaxCodeIds.add(String(result.getValue({ name: "internalid" })));
+        return true;
+      });
+
+    return noTaxRows
+      .filter((row) =>
+        wrongTaxCodeIds.has(
+          String(taxCodeIdByValue[String(row.taxCode).trim()]),
+        ),
+      )
+      .map((row) => row.lineNumber);
+  };
+
+  const assertWrongTaxCodesLines = (stagedRows) => {
+    const invalidLineNumbers = getWrongTaxLineNumbers(stagedRows);
+
+    if (invalidLineNumbers.length > 0) {
+      throw new Error(`The Tax Code has been entered incorrectly.`);
+    }
+  };
+
+  /* (1) Bill and Bill Credit require either Department (Line) or Project(Line).
+  (2) If the main Transaction Category Code is "Not Confirmed" or
+      "Not Confirmed - Cancel", the main Account must match the unconfirmed flag.
+  (3) If an Expense Account has SWK Account Flags = "No-tax Account",
+      its Tax Code must have "Exclude From VAT Reports" checked.
   */
   const doPurchaseLinesValidations = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
@@ -148,14 +274,28 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       ["displayname", "name", "number"],
     );
 
-    log.debug("data check", `idCat : ${idCat}, bUnconAcct:${bUnconAcct}`);
+    // log.debug("data check", `idCat : ${idCat}, bUnconAcct:${bUnconAcct}`);
 
+    //(2) Transaction Category <-> Account validation
     if (!isMainTransCatAcctMatched(idCat, bUnconAcct)) {
       throw new Error(
         `An incorrect account has been entered for estimated cost/expense.`,
       );
     }
+
+    //(1) Department / Project validation
     assertDeptOrProjectLines(billRows);
+
+    //(3) Tax Code Check
+    assertWrongTaxCodesLines(billRows);
+
+    // if (arrNoAmorts.length > 0) {
+    //   const MSG = lib.getTransMsgParams(libConstants.TRANS.KEYS.AMORT_SKED, [
+    //     arrNoAmorts.toString(),
+    //   ]);
+    //   lib.processError(MSG, bClient, "NO_AMORT_SKED");
+    //   bSave = false;
+    // }
   };
 
   return {
