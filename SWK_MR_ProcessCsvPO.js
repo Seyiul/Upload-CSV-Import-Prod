@@ -369,6 +369,8 @@ define([
         successCount: successCount,
         errorCount: errorCount,
         errorFileId: errorFileId,
+        message: summaryErrors.join("\n"),
+        errors: summaryErrors,
       });
     }
 

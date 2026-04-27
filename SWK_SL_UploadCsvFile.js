@@ -158,7 +158,7 @@ define([
         value: type,
         text:
           type === "BILL"
-            ? "BILL (Expense)"
+            ? "BILL (Expense) - 작업중입니다🛠️"
             : type === "BILL_ITEM"
               ? "BILL (Item)"
               : type === "PO"
