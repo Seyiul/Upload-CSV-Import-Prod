@@ -57,8 +57,6 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     }
   };
 
-  /** Project & Department */
-
   const findFirstInternalId = (recordType, filters) => {
     const lookupSearch = search.create({
       type: recordType,
@@ -255,11 +253,113 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     }
   };
 
-  /* (1) Bill and Bill Credit require either Department (Line) or Project(Line).
-  (2) If the main Transaction Category Code is "Not Confirmed" or
-      "Not Confirmed - Cancel", the main Account must match the unconfirmed flag.
-  (3) If an Expense Account has SWK Account Flags = "No-tax Account",
-      its Tax Code must have "Exclude From VAT Reports" checked.
+  /** Amortization */
+
+  const getMissingAmortLineNumbers = (
+    stagedRows,
+    scheduleHeader = "Amort. Schedule",
+    startHeader = "Amort. Start",
+    endHeader = "Amort. End",
+  ) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+
+        return {
+          account: rowData["Expense Account"],
+          schedule: rowData[scheduleHeader],
+          startDate: rowData[startHeader],
+          endDate: rowData[endHeader],
+          lineNumber: row.lineNumber || index + 2,
+        };
+      })
+      .filter(
+        (row) =>
+          hasValue(row.account) &&
+          (!hasValue(row.schedule) ||
+            !hasValue(row.startDate) ||
+            !hasValue(row.endDate)),
+      );
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    const accountIdByValue = resolveInternalIdsByValue(
+      search.Type.ACCOUNT,
+      candidateRows.map((row) => row.account),
+      ["displayname", "name", "number"],
+    );
+    const accountIds = Object.values(accountIdByValue).filter(hasValue);
+
+    if (accountIds.length === 0) {
+      return [];
+    }
+
+    const amortAccountIds = getAmortAccount(accountIds);
+
+    if (amortAccountIds.size === 0) {
+      return [];
+    }
+
+    return candidateRows
+      .filter((row) =>
+        amortAccountIds.has(
+          String(accountIdByValue[String(row.account).trim()]),
+        ),
+      )
+      .map((row) => row.lineNumber);
+  };
+
+  const getAmortAccount = (accountIds) => {
+    const amortAccountIds = new Set();
+    search
+      .create({
+        type: search.Type.ACCOUNT,
+        filters: [["internalid", search.Operator.ANYOF, accountIds]],
+        columns: [
+          search.createColumn({ name: "internalid" }),
+          search.createColumn({ name: libConstants.FLDS.ACCT.FLAG }),
+        ],
+      })
+      .run()
+      .each((result) => {
+        const accountFlagValue = result.getValue({
+          name: libConstants.FLDS.ACCT.FLAG,
+        });
+
+        if (Number(accountFlagValue) === libConstants.CODE.ACCT_FLAG_AMORT) {
+          amortAccountIds.add(String(result.getValue({ name: "internalid" })));
+        }
+
+        return true;
+      });
+
+    return amortAccountIds;
+  };
+
+  const assertAmortizationLines = (stagedRows) => {
+    // Expense Account인 경우 schedule, startDate, endDate가 있는지 확인
+    const invalidLineNumbers = getMissingAmortLineNumbers(stagedRows);
+
+    if (invalidLineNumbers.length > 0) {
+      throw new Error(`Please enter an amortization schedule.`);
+    }
+  };
+
+  /*
+(1) Department(Line) 또는 Project(Line) 중 하나는 필수 입력해야 함
+
+(2) Transaction Category의 Code가 "Not Confirmed"일 경우 Main Account에 가계정을 입력해야 함
+  Transaction Category : 미정 / 매출
+  Account : 92010501 미지급금가계정 : (가)미지급금
+
+(3) (Expense) Account의 SWK Account Flag가 "No-Tax Account"일 경우 Tax Code는 "Exclude From VAT Reports"로 체크되어 있어야 함
+  Account(Line) : 11190000 미지급금
+  Tax Code(Line) : Exclude From VAT Reports
+
+(4) (Expense) Account의 SWK Account Flag가 "Amortization Account"일 경우 아래 항목 필수 입력. Amort. Schedule, Amort. Start, Amort. End
+
   */
   const doPurchaseLinesValidations = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
@@ -289,13 +389,8 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     //(3) Tax Code Check
     assertWrongTaxCodesLines(billRows);
 
-    // if (arrNoAmorts.length > 0) {
-    //   const MSG = lib.getTransMsgParams(libConstants.TRANS.KEYS.AMORT_SKED, [
-    //     arrNoAmorts.toString(),
-    //   ]);
-    //   lib.processError(MSG, bClient, "NO_AMORT_SKED");
-    //   bSave = false;
-    // }
+    //(4) Amortization Check
+    assertAmortizationLines(billRows);
   };
 
   return {
