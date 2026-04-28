@@ -390,6 +390,12 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     assertAmortizationLines(billRows);
   };
 
+  // PO, Vendor Return: Line에 Department가 비어 있으면 안됨
+  const doOtherPurchaseLinesValidations = (billRows) => {
+    //(1) Department / Project validation
+    assertDeptLines(billRows);
+  };
+
   /** Income Account */
   const getItemIncomeAcctNoProj = (stagedRows) => {
     const candidateRows = (stagedRows || [])
@@ -486,6 +492,91 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     }
   };
 
+  /** Cost Collector By IP */
+  // custentity_swk_costcollector_byip
+  const getCostCollectorProject = (stagedRows) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+
+        return {
+          lineNumber: row.lineNumber || index + 2,
+          project: rowData["Project(Line)"],
+        };
+      })
+      .filter((row) => hasValue(row.project));
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    // Project ID
+    const projectIdByValue = resolveInternalIdsByValue(
+      search.Type.JOB,
+      candidateRows.map((row) => (row.project || "").trim().split(/\s+/)[0]),
+      ["entityid", "name"],
+    );
+
+    const projectIds = [];
+
+    candidateRows.forEach((row) => {
+      const projectCode = (row.project || "").trim().split(/\s+/)[0];
+      const projectId = projectIdByValue[projectCode];
+
+      if (!projectId) {
+        throw new Error("Project not found : " + row.project);
+      }
+
+      projectIds.push(projectId);
+    });
+
+    if (projectIds.length === 0) {
+      return [];
+    }
+
+    const costCollectorProjectIds = new Set();
+    search
+      .create({
+        type: search.Type.JOB,
+        filters: [
+          ["internalid", search.Operator.ANYOF, projectIds],
+          "AND",
+          ["custentity_swk_costcollector_byip", search.Operator.IS, "T"],
+        ],
+        columns: [search.createColumn({ name: "internalid" })],
+      })
+      .run()
+      .each((result) => {
+        costCollectorProjectIds.add(
+          String(result.getValue({ name: "internalid" })),
+        );
+        return true;
+      });
+
+    if (costCollectorProjectIds.size === 0) {
+      return [];
+    }
+
+    return candidateRows
+      .filter((row) => {
+        const projectCode = (row.project || "").trim().split(/\s+/)[0];
+        const projectId = projectIdByValue[projectCode];
+
+        return costCollectorProjectIds.has(String(projectId));
+      })
+      .map((row) => row.lineNumber);
+  };
+  const assertCostCollectorProject = (stagedRows) => {
+    const invalidCostCollectorProjectLines =
+      getCostCollectorProject(stagedRows);
+
+    if (invalidCostCollectorProjectLines.length > 0) {
+      throw new Error(
+        `Sales cannot be entered for a cost-accumulation project.`,
+      );
+    }
+  };
+
   /*
     (1) Project의 Cost Collector By IP가 체크되어 있는 프로젝트는 입력할 수 없음
 
@@ -505,6 +596,9 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
   */
 
   const doSalesLinesValidations = (invRows) => {
+    // (1) Project의 Cost Collector By ID 체크 여부
+    assertCostCollectorProject(invRows);
+
     // (2) Item - Income Account Check
     assertIncomeAccountLines(invRows);
 
@@ -518,5 +612,6 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
   return {
     doPurchaseLinesValidations,
     doSalesLinesValidations,
+    doOtherPurchaseLinesValidations,
   };
 });
