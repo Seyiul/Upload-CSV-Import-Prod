@@ -24,36 +24,30 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     return true;
   };
 
-  /** Project & Department */
-  const getMissingDeptOrProjectLineNumbers = (
+  /** Department */
+  const getMissingDeptLineNumbers = (
     stagedRows,
     departmentHeader = "Department(Line)",
-    projectHeader = "Project(Line)",
   ) =>
     (stagedRows || [])
       .filter((row) => {
         const rowData = row.rowData || {};
 
-        return (
-          !hasValue(rowData[departmentHeader]) &&
-          !hasValue(rowData[projectHeader])
-        );
+        return !hasValue(rowData[departmentHeader]);
       })
       .map((row, index) => row.lineNumber || index + 2);
 
-  const assertDeptOrProjectLines = (
+  const assertDeptLines = (
     stagedRows,
     departmentHeader = "Department(Line)",
-    projectHeader = "Project(Line)",
   ) => {
-    const invalidLineNumbers = getMissingDeptOrProjectLineNumbers(
+    const invalidLineNumbers = getMissingDeptLineNumbers(
       stagedRows,
       departmentHeader,
-      projectHeader,
     );
 
     if (invalidLineNumbers.length > 0) {
-      throw new Error(`Missing ${departmentHeader} or ${projectHeader}.`);
+      throw new Error(`Missing ${departmentHeader}.`);
     }
   };
 
@@ -324,11 +318,13 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       })
       .run()
       .each((result) => {
-        const accountFlagValue = result.getValue({
-          name: libConstants.FLDS.ACCT.FLAG,
-        });
+        const accountFlagText =
+          result.getText({ name: libConstants.FLDS.ACCT.FLAG }) || "";
 
-        if (Number(accountFlagValue) === libConstants.CODE.ACCT_FLAG_AMORT) {
+        if (
+          String(accountFlagText).trim().toLowerCase() ===
+          libConstants.CODE.ACCT_FLAG_AMORT
+        ) {
           amortAccountIds.add(String(result.getValue({ name: "internalid" })));
         }
 
@@ -348,7 +344,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
   };
 
   /*
-(1) Department(Line) 또는 Project(Line) 중 하나는 필수 입력해야 함
+(1) Department(Line)는 필수 입력해야 함
 
 (2) Transaction Category의 Code가 "Not Confirmed"일 경우 Main Account에 가계정을 입력해야 함
   Transaction Category : 미정 / 매출
@@ -384,7 +380,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     }
 
     //(1) Department / Project validation
-    assertDeptOrProjectLines(billRows);
+    assertDeptLines(billRows);
 
     //(3) Tax Code Check
     assertWrongTaxCodesLines(billRows);

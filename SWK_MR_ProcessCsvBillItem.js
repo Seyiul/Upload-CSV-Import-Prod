@@ -17,7 +17,8 @@ define([
   "N/runtime",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
-], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
+  "./SWK_Utils_ValidationCheck",
+], (file, log, record, runtime, csvUtils, uploadCsvConstants, validCheck) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_billitem";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_billitem";
   const {
@@ -48,6 +49,7 @@ define([
     getHeaderAliases,
     validateMappedHeaders,
   } = csvUtils;
+  const { doPurchaseLinesValidations } = validCheck;
 
   const FIELD_PROJECT_BODY = "custbody_swk_project_mainsingle";
   const FIELD_PROJECT_LINE = "custcol_swk_project_line";
@@ -127,6 +129,8 @@ define([
       "exchangerate",
       parseNumberValue(firstRowData["Exchange Rate"]),
     );
+
+    doPurchaseLinesValidations(billRows);
 
     // CSV의 각 행을 Vendor Bill의 Item 라인으로 매핑
     (billRows || []).forEach((row) => {
