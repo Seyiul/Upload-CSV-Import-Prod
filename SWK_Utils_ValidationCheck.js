@@ -335,7 +335,6 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
   };
 
   const assertAmortizationLines = (stagedRows) => {
-    // Expense Account인 경우 schedule, startDate, endDate가 있는지 확인
     const invalidLineNumbers = getMissingAmortLineNumbers(stagedRows);
 
     if (invalidLineNumbers.length > 0) {
@@ -344,19 +343,21 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
   };
 
   /*
-(1) Department(Line)는 필수 입력해야 함
+    (1) Department(Line)는 필수 입력해야 함
 
-(2) Transaction Category의 Code가 "Not Confirmed"일 경우 Main Account에 가계정을 입력해야 함
-  Transaction Category : 미정 / 매출
-  Account : 92010501 미지급금가계정 : (가)미지급금
+    (2) Transaction Category의 Code가 "Not Confirmed"일 경우 Main Account는 가계정이어야 함
+      Transaction Category : 미정 / 매출
+      Account : 92010501 미지급금가계정 : (가)미지급금
 
-(3) (Expense) Account의 SWK Account Flag가 "No-Tax Account"일 경우 Tax Code는 "Exclude From VAT Reports"로 체크되어 있어야 함
-  Account(Line) : 11190000 미지급금
-  Tax Code(Line) : Exclude From VAT Reports
+    (3) (Expense) Account의 SWK Account Flag가 "No-Tax Account"일 경우
+      Tax Code는 "Exclude From VAT Reports"로 체크되어 있어야 함
+      Account(Line) : 11190000 미지급금
+      Tax Code(Line) : Exclude From VAT Reports
 
-(4) (Expense) Account의 SWK Account Flag가 "Amortization Account"일 경우 아래 항목 필수 입력. Amort. Schedule, Amort. Start, Amort. End
-
-  */
+    (4) (Expense) Account의 SWK Account Flag가 "Amortization Account"일 경우
+      아래 항목은 필수 입력
+      Amort. Schedule, Amort. Start, Amort. End
+*/
   const doPurchaseLinesValidations = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
     const idCat = resolveInternalId(
@@ -389,7 +390,133 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     assertAmortizationLines(billRows);
   };
 
+  /** Income Account */
+  const getItemIncomeAcctNoProj = (stagedRows) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+        return {
+          item: rowData["Item"],
+          projectLine: rowData["Project(Line)"],
+          projectSeg: rowData["Project(Seg)"],
+          lineNumber: row.lineNumber || index + 2,
+        };
+      })
+      .filter(
+        (row) =>
+          hasValue(row.item) &&
+          (!hasValue(row.projectLine) || !hasValue(row.projectSeg)),
+      );
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    // Item ID
+    const itemIdByValue = resolveInternalIdsByValue(
+      search.Type.INVENTORY_ITEM,
+      candidateRows.map((row) => (row.item || "").trim().split(/\s+/)[0]),
+      ["itemid", "name"],
+    );
+
+    // Item - Income Account
+    const incomeAccountIdByItem = {};
+    const incomeAccountIds = [];
+
+    candidateRows.forEach((row) => {
+      const itemCode = (row.item || "").trim().split(/\s+/)[0];
+      const itemInternalId = itemIdByValue[itemCode];
+
+      if (!itemInternalId) {
+        throw new Error("Item not found: " + row.item);
+      }
+
+      const itemInfo = search.lookupFields({
+        type: search.Type.INVENTORY_ITEM,
+        id: itemInternalId,
+        columns: ["incomeaccount"],
+      });
+      const incomeAccountId = itemInfo.incomeaccount?.[0]?.value || "";
+
+      incomeAccountIdByItem[itemCode] = incomeAccountId;
+
+      if (incomeAccountId) {
+        incomeAccountIds.push(incomeAccountId);
+      }
+    });
+
+    if (incomeAccountIds.length === 0) {
+      return [];
+    }
+
+    const incomeAccountTypeById = {};
+    search
+      .create({
+        type: search.Type.ACCOUNT,
+        filters: [["internalid", search.Operator.ANYOF, incomeAccountIds]],
+        columns: [
+          search.createColumn({ name: "internalid" }),
+          search.createColumn({ name: "type" }),
+        ],
+      })
+      .run()
+      .each((result) => {
+        incomeAccountTypeById[String(result.getValue({ name: "internalid" }))] =
+          result.getValue({ name: "type" }) || "";
+        return true;
+      });
+
+    log.debug("incomeAccountTypeById", incomeAccountTypeById);
+
+    return candidateRows
+      .filter((row) => {
+        const itemCode = (row.item || "").trim().split(/\s+/)[0];
+        const incomeAccountId = incomeAccountIdByItem[itemCode];
+
+        return incomeAccountTypeById[String(incomeAccountId)] === "Income";
+      })
+      .map((row) => row.lineNumber);
+  };
+
+  const assertIncomeAccountLines = (stagedRows) => {
+    const invalidIncomeProjectLines = getItemIncomeAcctNoProj(stagedRows);
+
+    if (invalidIncomeProjectLines.length > 0) {
+      throw new Error(`No project has been entered for the sales entry.`);
+    }
+  };
+
+  /*
+    (1) Project의 Cost Collector By IP가 체크되어 있는 프로젝트는 입력할 수 없음
+
+    (2) 입력된 Item의 Income Account의 Account Type이 “Income”인 경우에는 Project(Line),Project(Seg)가 필수
+
+    (3) Project의 자산계정제외 프로젝트인 경우 매출이 발생할 수 없음
+      Field: custrecord_swk_pjtcatego_code / Code = 'ASSET'
+
+    (4) Transaction Category의 Code가 "Not Confirmed"일 경우
+      Main Account는 가계정이어야 함
+
+    (5) (Item의 Income Account) Account의 SWK Account Flag가 "No-Tax Account"일 경우
+      Tax Code는 "Exclude From VAT Reports"가 체크되어 있어야 함
+
+    (6) (Item의 Income Account) Account의 SWK Account Flag가 "Amortization Account"일 경우
+      Amort. Schedule, Amort. Start, Amort. End는 필수로 입력되어야 함
+  */
+
+  const doSalesLinesValidations = (invRows) => {
+    // (2) Item - Income Account Check
+    assertIncomeAccountLines(invRows);
+
+    //(5) Tax Code Check
+    assertWrongTaxCodesLines(invRows);
+
+    //(6) Amortization Check
+    assertAmortizationLines(invRows);
+  };
+
   return {
     doPurchaseLinesValidations,
+    doSalesLinesValidations,
   };
 });

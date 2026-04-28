@@ -17,7 +17,8 @@ define([
   "N/runtime",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
-], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
+  "./SWK_Utils_ValidationCheck",
+], (file, log, record, runtime, csvUtils, uploadCsvConstants, validCheck) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_iv";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_iv";
   const {
@@ -48,6 +49,8 @@ define([
     getHeaderAliases,
     validateMappedHeaders,
   } = csvUtils;
+
+  const { doSalesLinesValidations } = validCheck;
 
   const FIELD_PROJECT_BODY = "custbody_swk_project_mainsingle";
   const FIELD_PROJECT_LINE = "custcol_swk_project_line";
@@ -103,8 +106,9 @@ define([
       parseNumberValue(firstRowData["Exchange Rate"]),
     );
 
-    // Line 필드 매핑
+    doSalesLinesValidations(invRows);
 
+    // Line 필드 매핑
     (invRows || []).forEach((row) => {
       const rowData = row.rowData || {};
 
