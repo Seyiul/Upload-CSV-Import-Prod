@@ -16,7 +16,8 @@ define([
   "N/runtime",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
-], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
+  "./SWK_Utils_ValidationCheck",
+], (file, log, record, runtime, csvUtils, uploadCsvConstants, validCheck) => {
   const CSV_FILE_ID_PARAM_JN = "custscript_swk_csv_file_id_jn";
   const TRANSACTION_TYPE_PARAM_JN = "custscript_swk_csv_tran_type_jn";
   const {
@@ -47,6 +48,8 @@ define([
     getHeaderAliases,
     validateMappedHeaders,
   } = csvUtils;
+
+  const { doJournalLinesValdations } = validCheck;
 
   const createJournalRecord = (journalRows) => {
     const firstRowData =
@@ -88,6 +91,8 @@ define([
       "exchangerate",
       parseNumberValue(firstRowData["Exchange Rate"]),
     );
+
+    doJournalLinesValdations(journalRows);
 
     // Journal Entry 라인 설정
     (journalRows || []).forEach((journalRow) => {

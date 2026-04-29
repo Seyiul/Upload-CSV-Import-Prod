@@ -800,9 +800,106 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     assertWrongTaxCodesLinesForSo(invRows);
   };
 
+  /**
+      (1) Account Type이 Income이면 Project(line) (=Project(Seg))가 꼭 입력되어야 함
+      (2) Account Type이 Income, COGS, Expense, Other Expense, Other Income 이면 부서(Department)가 꼭 입력되어야 함 
+   */
+
+  /** Department */
+  const getAccountTypeByValue = (accountValues) => {
+    const accountIdByValue = resolveInternalIdsByValue(
+      search.Type.ACCOUNT,
+      accountValues,
+      ["displayname", "name", "number"],
+    );
+    const accountTypesByValue = {};
+    const accountIds = Object.values(accountIdByValue).filter(hasValue);
+
+    if (accountIds.length === 0) {
+      return accountTypesByValue;
+    }
+
+    const accountTypeById = {};
+    search
+      .create({
+        type: search.Type.ACCOUNT,
+        filters: [["internalid", search.Operator.ANYOF, accountIds]],
+        columns: [
+          search.createColumn({ name: "internalid" }),
+          search.createColumn({ name: "type" }),
+        ],
+      })
+      .run()
+      .each((result) => {
+        accountTypeById[String(result.getValue({ name: "internalid" }))] =
+          result.getValue({ name: "type" }) || "";
+        return true;
+      });
+
+    Object.keys(accountIdByValue).forEach((accountValue) => {
+      accountTypesByValue[accountValue] =
+        accountTypeById[String(accountIdByValue[accountValue])] || "";
+    });
+
+    return accountTypesByValue;
+  };
+
+  const getMissingDeptJnLineNumbers = (
+    stagedRows,
+    departmentHeader = "Department",
+  ) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+
+        return {
+          lineNumber: row.lineNumber || index + 2,
+          account: String(rowData["Account"] || "").trim(),
+          department: rowData[departmentHeader],
+        };
+      })
+      .filter((row) => !hasValue(row.department) && hasValue(row.account));
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    const accountTypeByValue = getAccountTypeByValue(
+      candidateRows.map((row) => row.account),
+    );
+
+    log.debug("accountTypeByValue", accountTypeByValue);
+
+    return candidateRows
+      .filter((row) =>
+        ["Income", "COGS", "Expense", "OthExpense", "OthIncome"].includes(
+          accountTypeByValue[row.account],
+        ),
+      )
+      .map((row) => row.lineNumber);
+  };
+
+  const assertDeptJnLines = (stagedRows, departmentHeader = "Department") => {
+    const invalidLineNumbers = getMissingDeptJnLineNumbers(
+      stagedRows,
+      departmentHeader,
+    );
+
+    if (invalidLineNumbers.length > 0) {
+      throw new Error(
+        `A department has not been entered for the cost account. `,
+      );
+    }
+  };
+
+  const doJournalLinesValdations = (journalRow) => {
+    assertDeptJnLines(journalRow);
+  };
+
   return {
     doPurchaseLinesValidations,
     doSalesLinesValidations,
     doOtherPurchaseLinesValidations,
+    doJournalLinesValdations,
   };
 });
