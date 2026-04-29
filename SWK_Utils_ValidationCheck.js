@@ -449,7 +449,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
         return {
           item: rowData["Item"],
           projectLine: rowData["Project(Line)"],
-          projectSeg: rowData["Project(Seg)"],
+          projectSeg: rowData["Project(Seg)"] || rowData["Project(seg)"],
           lineNumber: row.lineNumber || index + 2,
         };
       })
@@ -669,6 +669,89 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     }
   };
 
+  /** Asset Project */
+  const getAssetProject = (stagedRows) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+
+        return {
+          lineNumber: row.lineNumber || index + 2,
+          project: rowData["Project(Line)"],
+        };
+      })
+      .filter((row) => hasValue(row.project));
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    // Project ID
+    const projectIdByValue = resolveInternalIdsByValue(
+      search.Type.JOB,
+      candidateRows.map((row) => (row.project || "").trim().split(/\s+/)[0]),
+      ["entityid", "name"],
+    );
+
+    const projectIds = [];
+
+    candidateRows.forEach((row) => {
+      const projectCode = (row.project || "").trim().split(/\s+/)[0];
+      const projectId = projectIdByValue[projectCode];
+
+      if (!projectId) {
+        throw new Error("Project not found : " + row.project);
+      }
+
+      projectIds.push(projectId);
+    });
+
+    if (projectIds.length === 0) {
+      return [];
+    }
+
+    const assetProjectIds = new Set();
+    search
+      .create({
+        type: search.Type.JOB,
+        filters: [
+          ["internalid", search.Operator.ANYOF, projectIds],
+          "AND",
+          [
+            `${libConstants.REC.PROJ_CAT}.${libConstants.FLDS.PROJ_CAT.CODE}`,
+            search.Operator.IS,
+            libConstants.CODE.PROJ_CAT,
+          ],
+        ],
+        columns: [search.createColumn({ name: "internalid" })],
+      })
+      .run()
+      .each((result) => {
+        assetProjectIds.add(String(result.getValue({ name: "internalid" })));
+        return true;
+      });
+
+    if (assetProjectIds.size === 0) {
+      return [];
+    }
+
+    return candidateRows
+      .filter((row) => {
+        const projectCode = (row.project || "").trim().split(/\s+/)[0];
+        const projectId = projectIdByValue[projectCode];
+
+        return assetProjectIds.has(String(projectId));
+      })
+      .map((row) => row.lineNumber);
+  };
+  const assertAssetProject = (stagedRows) => {
+    const invalidtAssetProjectLines = getAssetProject(stagedRows);
+
+    if (invalidtAssetProjectLines.length > 0) {
+      throw new Error(`Sales cannot be entered for an asset creation project.`);
+    }
+  };
+
   /*
     (1) Project의 Cost Collector By IP가 체크되어 있는 프로젝트는 입력할 수 없음
 
@@ -682,9 +765,6 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
 
     (5) (Item의 Income Account) Account의 SWK Account Flag가 "No-Tax Account"일 경우
       Tax Code는 "Exclude From VAT Reports"가 체크되어 있어야 함
-
-    (6) (Item의 Income Account) Account의 SWK Account Flag가 "Amortization Account"일 경우
-      Amort. Schedule, Amort. Start, Amort. End는 필수로 입력되어야 함
   */
 
   const doSalesLinesValidations = (invRows) => {
@@ -714,12 +794,10 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     assertIncomeAccountLines(invRows);
 
     // (3) Asset project check
+    assertAssetProject(invRows);
 
     //(5) Tax Code Check
     assertWrongTaxCodesLinesForSo(invRows);
-
-    //(6) Amortization Check
-    //assertAmortizationLines(invRows);
   };
 
   return {
