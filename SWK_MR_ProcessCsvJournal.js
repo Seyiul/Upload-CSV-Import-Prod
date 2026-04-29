@@ -137,6 +137,12 @@ define([
         "custcol_swk_project_line",
         rowData["Project(Line)"],
       );
+      setCurrentLineTextIfPresent(
+        rec,
+        "line",
+        "cseg_swk_lapopjt",
+        rowData["Project(Line)"],
+      );
       setCurrentLineTextIfPresent(rec, "line", "taxcode", rowData["Tax"]);
 
       rec.commitLine({ sublistId: "line" });

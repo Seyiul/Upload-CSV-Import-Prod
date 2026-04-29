@@ -868,8 +868,6 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       candidateRows.map((row) => row.account),
     );
 
-    log.debug("accountTypeByValue", accountTypeByValue);
-
     return candidateRows
       .filter((row) =>
         ["Income", "COGS", "Expense", "OthExpense", "OthIncome"].includes(
@@ -892,7 +890,58 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     }
   };
 
+  //project
+  const getMissingProjectJnLineNumbers = (
+    stagedRows,
+    projectHeader = "Project(Line)",
+  ) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+
+        return {
+          lineNumber: row.lineNumber || index + 2,
+          account: String(rowData["Account"] || "").trim(),
+          project: rowData[projectHeader],
+        };
+      })
+      .filter((row) => !hasValue(row.project) && hasValue(row.account));
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    const accountTypeByValue = getAccountTypeByValue(
+      candidateRows.map((row) => row.account),
+    );
+
+    return candidateRows
+      .filter((row) => ["Income"].includes(accountTypeByValue[row.account]))
+      .map((row) => row.lineNumber);
+  };
+
+  const assetProjectJnLines = (stagedRows, projectHeader = "Project(Line)") => {
+    const invalidLineNumbers = getMissingProjectJnLineNumbers(
+      stagedRows,
+      projectHeader,
+    );
+
+    if (invalidLineNumbers.length > 0) {
+      throw new Error(`A project has not been entered for the sales account.`);
+    }
+  };
+
+  /**
+    (1) Account Type이 Income이면 Project가 꼭 입력되어야 함
+    
+    (2) Account Type이 Income, COGS, Expense, Other Expense, Other Income 이면 부서가 꼭 입력되어야 함 
+   */
+
   const doJournalLinesValdations = (journalRow) => {
+    // (1) Project Validation
+    assetProjectJnLines(journalRow);
+
+    // (2) Department Validation
     assertDeptJnLines(journalRow);
   };
 
