@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @NApiVersion 2.1
  */
 define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
@@ -144,39 +144,18 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     return resolvedIds;
   };
 
-  const getWrongTaxLineNumbers = (stagedRows) => {
-    const candidateRows = (stagedRows || [])
-      .map((row, index) => {
-        const rowData = row.rowData || {};
+  const getAccountFlagTextById = (accountIds) => {
+    const accountFlagTextById = {};
+    const filteredAccountIds = (accountIds || []).filter(hasValue);
 
-        return {
-          account: rowData["Expense Account"],
-          lineNumber: row.lineNumber || index + 2,
-          taxCode: rowData["Tax Code"],
-        };
-      })
-      .filter((row) => hasValue(row.account) && hasValue(row.taxCode));
-
-    if (candidateRows.length === 0) {
-      return [];
+    if (filteredAccountIds.length === 0) {
+      return accountFlagTextById;
     }
 
-    const accountIdByValue = resolveInternalIdsByValue(
-      search.Type.ACCOUNT,
-      candidateRows.map((row) => row.account),
-      ["displayname", "name", "number"],
-    );
-    const accountIds = Object.values(accountIdByValue).filter(hasValue);
-
-    if (accountIds.length === 0) {
-      return [];
-    }
-
-    const noTaxAccountIds = new Set();
     search
       .create({
         type: search.Type.ACCOUNT,
-        filters: [["internalid", search.Operator.ANYOF, accountIds]],
+        filters: [["internalid", search.Operator.ANYOF, filteredAccountIds]],
         columns: [
           search.createColumn({ name: "internalid" }),
           search.createColumn({ name: libConstants.FLDS.ACCT.FLAG }),
@@ -184,20 +163,60 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       })
       .run()
       .each((result) => {
-        const accountFlagText =
-          result.getText({ name: libConstants.FLDS.ACCT.FLAG }) || "";
-
-        if (String(accountFlagText).trim().toLowerCase() === "no-tax account") {
-          noTaxAccountIds.add(String(result.getValue({ name: "internalid" })));
-        }
-
+        accountFlagTextById[String(result.getValue({ name: "internalid" }))] =
+          String(result.getText({ name: libConstants.FLDS.ACCT.FLAG }) || "")
+            .trim()
+            .toLowerCase();
         return true;
       });
 
-    const noTaxRows = candidateRows.filter((row) =>
-      noTaxAccountIds.has(String(accountIdByValue[String(row.account).trim()])),
-    );
+    return accountFlagTextById;
+  };
 
+  const getIncomeAccountIdByItem = (itemValues) => {
+    const itemIdByValue = resolveInternalIdsByValue(
+      search.Type.INVENTORY_ITEM,
+      itemValues,
+      ["itemid", "name"],
+    );
+    const incomeAccountIdByItem = {};
+
+    Object.keys(itemIdByValue).forEach((itemCode) => {
+      const itemInternalId = itemIdByValue[itemCode];
+
+      if (!itemInternalId) {
+        throw new Error("Item not found: " + itemCode);
+      }
+
+      const itemInfo = search.lookupFields({
+        type: search.Type.INVENTORY_ITEM,
+        id: itemInternalId,
+        columns: ["incomeaccount"],
+      });
+
+      incomeAccountIdByItem[itemCode] =
+        itemInfo.incomeaccount?.[0]?.value || "";
+    });
+
+    return incomeAccountIdByItem;
+  };
+
+  const getIncomeAccountFlagTextByItem = (itemValues) => {
+    const incomeAccountIdByItem = getIncomeAccountIdByItem(itemValues);
+    const accountFlagTextById = getAccountFlagTextById(
+      Object.values(incomeAccountIdByItem),
+    );
+    const incomeAccountFlagTextByItem = {};
+
+    Object.keys(incomeAccountIdByItem).forEach((itemCode) => {
+      incomeAccountFlagTextByItem[itemCode] =
+        accountFlagTextById[String(incomeAccountIdByItem[itemCode])] || "";
+    });
+
+    return incomeAccountFlagTextByItem;
+  };
+
+  const getWrongTaxCodeLineNumbers = (noTaxRows) => {
     if (noTaxRows.length === 0) {
       return [];
     }
@@ -237,6 +256,46 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
         ),
       )
       .map((row) => row.lineNumber);
+  };
+
+  const getWrongTaxLineNumbers = (stagedRows) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+
+        return {
+          account: rowData["Expense Account"],
+          lineNumber: row.lineNumber || index + 2,
+          taxCode: rowData["Tax Code"],
+        };
+      })
+      .filter((row) => hasValue(row.account) && hasValue(row.taxCode));
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    const accountIdByValue = resolveInternalIdsByValue(
+      search.Type.ACCOUNT,
+      candidateRows.map((row) => row.account),
+      ["displayname", "name", "number"],
+    );
+    const accountIds = Object.values(accountIdByValue).filter(hasValue);
+
+    if (accountIds.length === 0) {
+      return [];
+    }
+
+    const accountFlagTextById = getAccountFlagTextById(accountIds);
+
+    const noTaxRows = candidateRows.filter(
+      (row) =>
+        accountFlagTextById[
+          String(accountIdByValue[String(row.account).trim()])
+        ] === "no-tax account",
+    );
+
+    return getWrongTaxCodeLineNumbers(noTaxRows);
   };
 
   const assertWrongTaxCodesLines = (stagedRows) => {
@@ -307,29 +366,15 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
 
   const getAmortAccount = (accountIds) => {
     const amortAccountIds = new Set();
-    search
-      .create({
-        type: search.Type.ACCOUNT,
-        filters: [["internalid", search.Operator.ANYOF, accountIds]],
-        columns: [
-          search.createColumn({ name: "internalid" }),
-          search.createColumn({ name: libConstants.FLDS.ACCT.FLAG }),
-        ],
-      })
-      .run()
-      .each((result) => {
-        const accountFlagText =
-          result.getText({ name: libConstants.FLDS.ACCT.FLAG }) || "";
+    const accountFlagTextById = getAccountFlagTextById(accountIds);
 
-        if (
-          String(accountFlagText).trim().toLowerCase() ===
-          libConstants.CODE.ACCT_FLAG_AMORT
-        ) {
-          amortAccountIds.add(String(result.getValue({ name: "internalid" })));
-        }
-
-        return true;
-      });
+    Object.keys(accountFlagTextById).forEach((accountId) => {
+      if (
+        accountFlagTextById[accountId] === libConstants.CODE.ACCT_FLAG_AMORT
+      ) {
+        amortAccountIds.add(String(accountId));
+      }
+    });
 
     return amortAccountIds;
   };
@@ -418,38 +463,12 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       return [];
     }
 
-    // Item ID
-    const itemIdByValue = resolveInternalIdsByValue(
-      search.Type.INVENTORY_ITEM,
+    const incomeAccountIdByItem = getIncomeAccountIdByItem(
       candidateRows.map((row) => (row.item || "").trim().split(/\s+/)[0]),
-      ["itemid", "name"],
     );
-
-    // Item - Income Account
-    const incomeAccountIdByItem = {};
-    const incomeAccountIds = [];
-
-    candidateRows.forEach((row) => {
-      const itemCode = (row.item || "").trim().split(/\s+/)[0];
-      const itemInternalId = itemIdByValue[itemCode];
-
-      if (!itemInternalId) {
-        throw new Error("Item not found: " + row.item);
-      }
-
-      const itemInfo = search.lookupFields({
-        type: search.Type.INVENTORY_ITEM,
-        id: itemInternalId,
-        columns: ["incomeaccount"],
-      });
-      const incomeAccountId = itemInfo.incomeaccount?.[0]?.value || "";
-
-      incomeAccountIdByItem[itemCode] = incomeAccountId;
-
-      if (incomeAccountId) {
-        incomeAccountIds.push(incomeAccountId);
-      }
-    });
+    const incomeAccountIds = Object.values(incomeAccountIdByItem).filter(
+      hasValue,
+    );
 
     if (incomeAccountIds.length === 0) {
       return [];
@@ -471,8 +490,6 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
           result.getValue({ name: "type" }) || "";
         return true;
       });
-
-    log.debug("incomeAccountTypeById", incomeAccountTypeById);
 
     return candidateRows
       .filter((row) => {
@@ -577,6 +594,81 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     }
   };
 
+  /** No-Tax Account */
+  const getWrongTaxLineNumbersForSo = (stagedRows) => {
+    const candidateRows = (stagedRows || [])
+      .map((row, index) => {
+        const rowData = row.rowData || {};
+
+        return {
+          item: rowData["Item"],
+          lineNumber: row.lineNumber || index + 2,
+          taxCode: rowData["Tax Code"],
+        };
+      })
+      .filter((row) => hasValue(row.item) && hasValue(row.taxCode));
+
+    if (candidateRows.length === 0) {
+      return [];
+    }
+
+    const incomeAccountIdByItem = getIncomeAccountIdByItem(
+      candidateRows.map((row) => (row.item || "").trim().split(/\s+/)[0]),
+    );
+    const incomeAccountIds = Object.values(incomeAccountIdByItem).filter(
+      hasValue,
+    );
+
+    if (incomeAccountIds.length === 0) {
+      return [];
+    }
+
+    const incomeAccountTypeById = {};
+    search
+      .create({
+        type: search.Type.ACCOUNT,
+        filters: [["internalid", search.Operator.ANYOF, incomeAccountIds]],
+        columns: [
+          search.createColumn({ name: "internalid" }),
+          search.createColumn({ name: "type" }),
+        ],
+      })
+      .run()
+      .each((result) => {
+        incomeAccountTypeById[String(result.getValue({ name: "internalid" }))] =
+          result.getValue({ name: "type" }) || "";
+        return true;
+      });
+
+    const accountFlagTextById = getAccountFlagTextById(incomeAccountIds);
+
+    log.debug("accountFlagTextById", accountFlagTextById);
+    log.debug("incomeAccountTypeById", incomeAccountTypeById);
+
+    const noTaxRows = candidateRows.filter((row) => {
+      const itemCode = (row.item || "").trim().split(/\s+/)[0];
+      const incomeAccountId = incomeAccountIdByItem[itemCode];
+
+      return accountFlagTextById[String(incomeAccountId)] === "no-tax account";
+      // return (
+      //   incomeAccountTypeById[String(incomeAccountId)] === "Income" &&
+      //   accountFlagTextById[String(incomeAccountId)] === "no-tax account"
+      // );
+    });
+
+    log.debug("noTaxRows", noTaxRows);
+
+    return getWrongTaxCodeLineNumbers(noTaxRows);
+  };
+
+  const assertWrongTaxCodesLinesForSo = (stagedRows) => {
+    const invalidLineNumbers = getWrongTaxLineNumbersForSo(stagedRows);
+
+    if (invalidLineNumbers.length > 0) {
+      throw new Error(`The Tax Code has been entered incorrectly.`);
+    }
+  };
+
   /*
     (1) Project의 Cost Collector By IP가 체크되어 있는 프로젝트는 입력할 수 없음
 
@@ -596,17 +688,38 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
   */
 
   const doSalesLinesValidations = (invRows) => {
+    // (4) Transaction Category check
+    const firstRowData = (invRows && invRows[0] && invRows[0].rowData) || {};
+    const idCat = resolveInternalId(
+      libConstants.REC.TRANS_CAT,
+      firstRowData["Transaction Category"],
+      ["name"],
+    );
+    const bUnconAcct = resolveInternalId(
+      search.Type.ACCOUNT,
+      firstRowData["Account(AR)"],
+      ["displayname", "name", "number"],
+    );
+
+    if (!isMainTransCatAcctMatched(idCat, bUnconAcct)) {
+      throw new Error(
+        `An incorrect account has been entered for estimated cost/expense.`,
+      );
+    }
+
     // (1) Project의 Cost Collector By ID 체크 여부
     assertCostCollectorProject(invRows);
 
     // (2) Item - Income Account Check
     assertIncomeAccountLines(invRows);
 
+    // (3) Asset project check
+
     //(5) Tax Code Check
-    assertWrongTaxCodesLines(invRows);
+    assertWrongTaxCodesLinesForSo(invRows);
 
     //(6) Amortization Check
-    assertAmortizationLines(invRows);
+    //assertAmortizationLines(invRows);
   };
 
   return {
