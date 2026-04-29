@@ -232,13 +232,24 @@ define(["N/search"], (search) => {
     const firstRowData = stagedRowsByLine[errorRows[0].lineNumber] || {};
     const headers = Object.keys(firstRowData);
     const csvLines = [buildCsvLine(["Error", ...headers])];
+    const shownErrorKeys = {};
 
     errorRows.forEach((row) => {
       const originalRowData = stagedRowsByLine[row.lineNumber] || {};
+      const externalId =
+        row.externalId ||
+        originalRowData["External ID"] ||
+        originalRowData["EXTERNAL ID"] ||
+        "";
+      const normalizedMessage = String(row.message || "").trim();
+      const errorKey = `${String(externalId).trim()}::${normalizedMessage}`;
+      const displayMessage = shownErrorKeys[errorKey] ? "" : row.message;
+
+      shownErrorKeys[errorKey] = true;
 
       csvLines.push(
         buildCsvLine([
-          row.message,
+          displayMessage,
           ...headers.map((header) => originalRowData[header] ?? ""),
         ]),
       );

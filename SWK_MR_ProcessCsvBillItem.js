@@ -334,6 +334,7 @@ define([
           value: JSON.stringify({
             lineNumber: row.lineNumber,
             message: e.message,
+            externalId: reduceContext.key,
           }),
         });
       });

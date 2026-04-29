@@ -111,10 +111,10 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       columns: [libConstants.FLDS.ACCT.UNCON],
     });
     const NOT_CONFIRMED_ACCT = acctFields[libConstants.FLDS.ACCT.UNCON];
-    log.debug(
-      LOG_TITLE,
-      `NOT_CONFIRMED_CAT: ${NOT_CONFIRMED_CAT} NOT_CONFIRMED_ACCT: ${NOT_CONFIRMED_ACCT}`,
-    );
+    // log.debug(
+    //   LOG_TITLE,
+    //   `NOT_CONFIRMED_CAT: ${NOT_CONFIRMED_CAT} NOT_CONFIRMED_ACCT: ${NOT_CONFIRMED_ACCT}`,
+    // );
 
     return NOT_CONFIRMED_CAT === NOT_CONFIRMED_ACCT;
   };
@@ -308,8 +308,9 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       })
       .run()
       .each((result) => {
-        incomeAccountIdByItemId[String(result.getValue({ name: "internalid" }))] =
-          result.getValue({ name: "incomeaccount" }) || "";
+        incomeAccountIdByItemId[
+          String(result.getValue({ name: "internalid" }))
+        ] = result.getValue({ name: "incomeaccount" }) || "";
         return true;
       });
 
@@ -736,15 +737,14 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
 
     const accountMetaById = getAccountMetaById(incomeAccountIds);
 
-    log.debug("accountMetaById", accountMetaById);
+    // log.debug("accountMetaById", accountMetaById);
 
     const noTaxRows = candidateRows.filter((row) => {
       const itemCode = (row.item || "").trim().split(/\s+/)[0];
       const incomeAccountId = incomeAccountIdByItem[itemCode];
 
       return (
-        accountMetaById[String(incomeAccountId)]?.flagText ===
-        "no-tax account"
+        accountMetaById[String(incomeAccountId)]?.flagText === "no-tax account"
       );
       // return (
       //   accountMetaById[String(incomeAccountId)]?.type === "Income" &&
@@ -753,7 +753,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       // );
     });
 
-    log.debug("noTaxRows", noTaxRows);
+    // log.debug("noTaxRows", noTaxRows);
 
     return getWrongTaxCodeLineNumbers(noTaxRows);
   };

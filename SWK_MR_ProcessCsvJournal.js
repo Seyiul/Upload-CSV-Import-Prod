@@ -54,13 +54,13 @@ define([
   const createJournalRecord = (journalRows) => {
     const firstRowData =
       (journalRows && journalRows[0] && journalRows[0].rowData) || {};
-    log.audit(
-      "createJournalRecord:start",
-      "externalId=" +
-        (firstRowData["External ID"] || "") +
-        ", lines=" +
-        ((journalRows && journalRows.length) || 0),
-    );
+    // log.audit(
+    //   "createJournalRecord:start",
+    //   "externalId=" +
+    //     (firstRowData["External ID"] || "") +
+    //     ", lines=" +
+    //     ((journalRows && journalRows.length) || 0),
+    // );
     const rec = record.create({
       type: record.Type.JOURNAL_ENTRY,
       isDynamic: true,
@@ -98,15 +98,15 @@ define([
     (journalRows || []).forEach((journalRow) => {
       const rowData = journalRow.rowData || {};
 
-      log.audit(
-        "createJournalRecord:line",
-        "Processing line with Account: " +
-          rowData["Account"] +
-          ", Debit: " +
-          rowData["Debit"] +
-          ", Credit: " +
-          rowData["Credit"],
-      );
+      // log.audit(
+      //   "createJournalRecord:line",
+      //   "Processing line with Account: " +
+      //     rowData["Account"] +
+      //     ", Debit: " +
+      //     rowData["Debit"] +
+      //     ", Credit: " +
+      //     rowData["Credit"],
+      // );
 
       rec.selectNewLine({ sublistId: "line" });
 
@@ -149,7 +149,7 @@ define([
     });
 
     const recordId = rec.save();
-    log.audit("createJournalRecord:saved", "recordId=" + recordId);
+    // log.audit("createJournalRecord:saved", "recordId=" + recordId);
     return recordId;
   };
 
@@ -227,7 +227,7 @@ define([
       key: String(externalId),
       value: JSON.stringify(input),
     });
-    log.audit("map:write", "lineNumber=" + lineNumber + ", key=" + externalId);
+    // log.audit("map:write", "lineNumber=" + lineNumber + ", key=" + externalId);
   };
 
   const reduce = (reduceContext) => {
@@ -243,10 +243,10 @@ define([
           recordId: recordId,
         }),
       });
-      log.audit(
-        "reduce:success",
-        "key=" + reduceContext.key + ", recordId=" + recordId,
-      );
+      // log.audit(
+      //   "reduce:success",
+      //   "key=" + reduceContext.key + ", recordId=" + recordId,
+      // );
     } catch (e) {
       log.error(
         "reduce",
@@ -259,6 +259,7 @@ define([
           value: JSON.stringify({
             lineNumber: journalRow.lineNumber,
             message: e.message,
+            externalId: reduceContext.key,
           }),
         });
       });
