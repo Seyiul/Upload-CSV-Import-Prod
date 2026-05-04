@@ -223,6 +223,36 @@ define(["N/search", "./i18n"], (search, i18n) => {
     return stagedRowsByLine;
   };
 
+  function normalizeReferenceError(message) {
+    const trans = i18n.load();
+    const match = message.match(/^Invalid\s+(.+?)\s+reference key\s+(.+)\.?$/);
+
+    if (!match) return message;
+
+    const fieldId = match[1];
+    const value = match[2];
+
+    const FIELD_LABEL_MAP = {
+      custbody_swk_transcategory: trans.TRANSACTION_CATEGORY(),
+      department: trans.DEPARTMENT(),
+      entity: trans.VENDOR_OR_CUSTOMER(),
+      account: trans.ACCOUNT(),
+      subsidiary: trans.SUBSIDIARY(),
+      location: trans.LOCATION(),
+      currency: trans.CURRENCY(),
+      taxcode: trans.TAX_CODE(),
+      item: trans.ITEM(),
+      memo: trans.MEMO(),
+      terms: trans.TERMS(),
+      postingperiod: trans.POSTING_PERIOD(),
+    };
+
+    const fieldLabel = FIELD_LABEL_MAP[fieldId] || fieldId;
+
+    return trans.INVALID_REFERENCE_VALUE({
+      params: [fieldLabel, value],
+    });
+  }
   // 에러가 발생한 행들의 데이터를 CSV 형식으로 변환하여 반환
   const buildErrorReportCsvContents = (errorRows, stagedRowsByLine) => {
     if (!errorRows || errorRows.length === 0) {
@@ -243,7 +273,9 @@ define(["N/search", "./i18n"], (search, i18n) => {
         "";
       const normalizedMessage = String(row.message || "").trim();
       const errorKey = `${String(externalId).trim()}::${normalizedMessage}`;
-      const displayMessage = shownErrorKeys[errorKey] ? "" : row.message;
+      const displayMessage = shownErrorKeys[errorKey]
+        ? ""
+        : normalizeReferenceError(row.message);
 
       shownErrorKeys[errorKey] = true;
 

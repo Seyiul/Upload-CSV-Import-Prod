@@ -46,6 +46,19 @@ define(["N/translation"], (translation) => {
     "PLEASE_WAIT_PROCESSING",
     "MISSING_COLUMN",
     "CSV_HEADER_VALIDATION_FAILED",
+    "INVALID_REFERENCE_VALUE",
+    "TRANSACTION_CATEGORY",
+    "DEPARTMENT",
+    "VENDOR_OR_CUSTOMER",
+    "ACCOUNT",
+    "SUBSIDIARY",
+    "LOCATION",
+    "CURRENCY",
+    "TAX_CODE",
+    "ITEM",
+    "MEMO",
+    "TERMS",
+    "POSTING_PERIOD",
   ];
 
   const load = () => {
