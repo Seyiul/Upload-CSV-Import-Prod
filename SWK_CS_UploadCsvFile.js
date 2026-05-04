@@ -3,7 +3,9 @@
  * @NScriptType ClientScript
  * @NModuleScope SameAccount
  */
-define(["N/log", "N/url"], function (log, url) {
+define(["N/log", "N/url", "./i18n"], function (log, url, i18n) {
+  const trans = i18n.load();
+
   const SUITELET_SCRIPT_ID = "customscript_swk_sl_uploadcsvfile";
   const SUITELET_DEPLOYMENT_ID = "customdeploy_swk_sl_uploadcsvfile";
 
@@ -16,11 +18,11 @@ define(["N/log", "N/url"], function (log, url) {
   };
 
   const TEMPLATE_NAMES = {
-    PO: "PO Template.csv",
-    BILL: "Bill Template.csv",
-    BILL_ITEM: "Bill ITEM Template.csv",
-    INVOICE: "Invoice Template.csv",
-    JOURNAL: "Journal Template.csv",
+    PO: trans.PO_TEMPLATE(),
+    BILL: trans.BILL_EXPENSE_TEMPLATE(),
+    BILL_ITEM: trans.BILL_ITEM_TEMPLATE(),
+    INVOICE: trans.INVOICE_TEMPLATE(),
+    JOURNAL: trans.JOURNAL_TEMPLATE(),
   };
 
   const TEMPLATE_LINK_DEFAULT_TEXT = "";
@@ -38,7 +40,7 @@ define(["N/log", "N/url"], function (log, url) {
     });
 
   const getTemplateName = (transactionType) =>
-    TEMPLATE_NAMES[transactionType] || "Select a transaction type first";
+    TEMPLATE_NAMES[transactionType] || trans.SELECT_TRANSACTION_TYPE_REQUIRED();
 
   const ensureLoadingOverlay = () => {
     if (document.getElementById("swk-upload-loading")) {
@@ -53,8 +55,8 @@ define(["N/log", "N/url"], function (log, url) {
     overlay.innerHTML = `
       <div style="min-width:320px;padding:28px 32px;border-radius:16px;background:#ffffff;box-shadow:0 12px 40px rgba(0,0,0,0.12);text-align:center;">
         <div style="width:44px;height:44px;margin:0 auto 16px;border:4px solid #d9e2f2;border-top-color:#1f5fbf;border-radius:50%;animation:swkSpin 0.8s linear infinite;"></div>
-        <div style="font-size:18px;font-weight:600;color:#1f2937;">CSV Upload In Progress</div>
-        <div style="margin-top:8px;font-size:13px;color:#6b7280;">Please wait while the request is being processed.</div>
+        <div style="font-size:18px;font-weight:600;color:#1f2937;">${trans.CSV_UPLOAD_IN_PROGRESS()}</div>
+        <div style="margin-top:8px;font-size:13px;color:#6b7280;">${trans.PLEASE_WAIT_PROCESSING()}</div>
       </div>
     `;
 
@@ -83,8 +85,8 @@ define(["N/log", "N/url"], function (log, url) {
     }
 
     container.innerHTML = templateUrl
-      ? `<a href="${templateUrl}" target="_blank">Download ${templateName}</a>`
-      : "Error loading template link";
+      ? `<a href="${templateUrl}" target="_blank">${trans.DOWNLOAD()} ${templateName}</a>`
+      : trans.ERROR_LOADING_TEMPLATE_LINK();
   };
 
   // Suitelet에서 템플릿 링크를 조회하여 업데이트

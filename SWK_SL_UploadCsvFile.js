@@ -17,8 +17,10 @@ define([
   "N/redirect",
   "N/url",
   "N/runtime",
+  "N/translation",
   "./SWK_Constants_UploadCsv",
   "./SWK_Utils_UploadCsvFiles",
+  "./i18n",
 ], (
   serverWidget,
   log,
@@ -28,8 +30,10 @@ define([
   redirect,
   url,
   runtime,
+  translation,
   uploadCsvConstants,
   csvUtils,
+  i18n,
 ) => {
   const {
     SUITELET_SCRIPT_ID,
@@ -85,22 +89,25 @@ define([
     stagingFileId,
     errorFileId,
   }) => {
+    // Load translation strings by key
+    const trans = i18n.load();
+
     const form = serverWidget.createForm({
-      title: "Upload CSV File",
+      title: trans.TITLE(),
     });
     const transactionConfig = getTransactionConfig(transactionType) || {};
 
     form.addFieldGroup({
       id: "custpage_group_template_download",
-      label: "템플릿 다운로드",
+      label: trans.TEMPLATE_DOWNLOAD(),
     });
     form.addFieldGroup({
       id: "custpage_group_upload_options",
-      label: "업로드 옵션",
+      label: trans.UPLOAD_OPTION(),
     });
     form.addFieldGroup({
       id: "custpage_group_upload_status",
-      label: "업로드 상태",
+      label: trans.UPLOAD_STATUS(),
     });
 
     // 파일 업로드 필드
@@ -119,11 +126,12 @@ define([
     const templateNameField = form.addField({
       id: "custpage_template_name",
       type: serverWidget.FieldType.TEXT,
-      label: "Template",
+      label: trans.TEMPLATE(),
       container: "custpage_group_template_download",
     });
     templateNameField.defaultValue =
-      transactionConfig.templateName || "Transaction Type을 선택하세요.";
+      transactionConfig.templateName ||
+      trans.SELECT_TRANSACTION_TYPE_REQUIRED();
     templateNameField.updateDisplayType({
       displayType: serverWidget.FieldDisplayType.INLINE,
     });
@@ -136,7 +144,7 @@ define([
     });
     templateLinkHtmlField.defaultValue = `
       <div style="margin-top:10px;">
-        <div class="smallgraytextnolink uir-label">Download Link</div>
+        <div class="smallgraytextnolink uir-label">${trans.DOWNLOAD_LINK()}</div>
         <div id="custpage_template_link_container"></div>
       </div>
     `;
@@ -144,13 +152,13 @@ define([
     const transactionTypeField = form.addField({
       id: "custpage_transaction_type",
       type: serverWidget.FieldType.SELECT,
-      label: "Transaction Type",
+      label: trans.TRANSACTION_TYPE(),
       container: "custpage_group_upload_options",
     });
     transactionTypeField.isMandatory = true;
     transactionTypeField.addSelectOption({
       value: "",
-      text: "Select Transaction Type",
+      text: trans.SELECT_TRANSACTION_TYPE(),
     });
 
     Object.keys(TRANSACTION_CONFIG).forEach((type) => {
@@ -158,12 +166,14 @@ define([
         value: type,
         text:
           type === "BILL"
-            ? "BILL (Expense)"
+            ? trans.BILL_EXPENSE()
             : type === "BILL_ITEM"
-              ? "BILL (Item)"
+              ? trans.BILL_ITEM()
               : type === "PO"
-                ? "Purchase Order"
-                : type,
+                ? trans.PURCHASE_ORDER()
+                : type === "INVOICE"
+                  ? trans.INVOICE()
+                  : trans.JOURNAL(),
       });
     });
 
@@ -196,7 +206,7 @@ define([
     if (taskId) {
       form.addButton({
         id: "custpage_refresh_status",
-        label: "새로고침",
+        label: trans.REFRESH(),
         functionName: "refreshStatus",
       });
     }
@@ -223,7 +233,7 @@ define([
           <div style="font-size:14px;line-height:1.6;color:#475569;white-space:pre-wrap;">${csvUtils.escapeHtml(statusMessage)}</div>
           ${
             downloadUrl
-              ? `<div style="margin-top:14px;"><a href="${downloadUrl}" style="color:#1d4ed8;font-weight:600;text-decoration:none;">Download Error CSV</a></div>`
+              ? `<div style="margin-top:14px;"><a href="${downloadUrl}" style="color:#1d4ed8;font-weight:600;text-decoration:none;">${trans.DOWNLOAD_ERROR_CSV()}</a></div>`
               : ""
           }
         </div>
@@ -233,7 +243,7 @@ define([
     }
 
     form.addSubmitButton({
-      label: "제출",
+      label: trans.SUBMIT(),
     });
     form.clientScriptModulePath = "./SWK_CS_UploadCsvFile.js";
     return form;
@@ -253,7 +263,7 @@ define([
   };
 
   // Map/Reduce Task 상태 조회
-  const getTaskStatusDetails = (taskId) => {
+  const getTaskStatusDetails = (taskId, trans) => {
     if (!taskId) {
       return null;
     }
@@ -263,11 +273,11 @@ define([
     });
 
     return {
-      title: "Upload Status",
+      title: trans.UPLOAD_STATUS(),
       message:
-        `Task ID: ${taskId}\n` +
-        `Status: ${status.status}` +
-        (status.stage ? `\nStage: ${status.stage}` : ""),
+        `${trans.TASK_ID()}${taskId}\n` +
+        `${trans.STATUS()}${status.status}` +
+        (status.stage ? `\n${trans.STAGE()}${status.stage}` : ""),
       status: status.status,
     };
   };
@@ -299,8 +309,8 @@ define([
   };
 
   // Map/Reduce Task 완료 후 결과 조회
-  const getCompletedTaskResult = (taskId, stagingFileId) => {
-    const taskStatus = getTaskStatusDetails(taskId);
+  const getCompletedTaskResult = (taskId, stagingFileId, trans) => {
+    const taskStatus = getTaskStatusDetails(taskId, trans);
     if (!taskStatus || String(taskStatus.status).toUpperCase() !== "COMPLETE") {
       return taskStatus;
     }
@@ -323,16 +333,16 @@ define([
         ? (summary.errors || []).join("\n")
         : "");
     const resultMessage =
-      `Status: ${taskStatus.status}\n` +
-      `Success: ${summary.successCount || 0}\n` +
-      `Errors: ${summary.errorCount || 0}` +
+      `${trans.STATUS()}${taskStatus.status}\n` +
+      `${trans.SUCCESS()}${summary.successCount || 0}\n` +
+      `${trans.ERRORS()}${summary.errorCount || 0}` +
       (detailMessage ? `\n\n${detailMessage}` : "");
 
     return {
       title:
         summary.errorCount > 0
-          ? "Upload Completed With Errors"
-          : "Upload Completed",
+          ? trans.UPLOAD_COMPLETED_WITH_ERRORS()
+          : trans.UPLOAD_COMPLETED(),
       message: resultMessage,
       status: taskStatus.status,
       errorFileId: summary.errorFileId || "",
@@ -436,11 +446,17 @@ define([
     const { parameters } = request;
     const action = parameters.action;
 
+    const trans = i18n.load();
+
     if (action === ACTIONS.taskStatus) {
       try {
         writeJson(
           response,
-          getCompletedTaskResult(parameters.taskid, parameters.stagingfileid),
+          getCompletedTaskResult(
+            parameters.taskid,
+            parameters.stagingfileid,
+            trans,
+          ),
         );
       } catch (e) {
         writeJson(response, {
@@ -454,7 +470,7 @@ define([
 
     if (action === ACTIONS.downloadErrorCsv) {
       if (!parameters.errorFileId) {
-        writeText(response, "Missing error file.");
+        writeText(response, trans.MISSING_ERROR_FILE());
         return;
       }
 
@@ -502,6 +518,7 @@ define([
       const taskStatus = getCompletedTaskResult(
         parameters.taskid,
         parameters.stagingfileid,
+        trans,
       );
 
       renderForm(response, {
@@ -536,11 +553,13 @@ define([
 
     log.debug("Received POST request, queueing MR");
 
+    const trans = i18n.load();
+
     if (!transactionType || !uploadedFile) {
       renderForm(response, {
         transactionType: transactionType,
-        statusTitle: "Upload Failed",
-        statusMessage: "Missing transaction type or file.",
+        statusTitle: trans.UPLOAD_FAILED(),
+        statusMessage: trans.MISSING_TYPE_OR_FILE(),
       });
       return;
     }
@@ -548,8 +567,8 @@ define([
     if (!transactionConfig || !transactionConfig.templateFileId) {
       renderForm(response, {
         transactionType: transactionType,
-        statusTitle: "Upload Failed",
-        statusMessage: "Unsupported transaction type: " + transactionType,
+        statusTitle: trans.UPLOAD_FAILED(),
+        statusMessage: `${trans.UNSUPPORTED_TRANSACTION_TYPE()}: ${transactionType}`,
       });
       return;
     }
@@ -574,8 +593,8 @@ define([
       if (!taskId) {
         renderForm(response, {
           transactionType: transactionType,
-          statusTitle: "Upload Failed",
-          statusMessage: "Unsupported transaction type: " + transactionType,
+          statusTitle: trans.UPLOAD_FAILED(),
+          statusMessage: `${trans.UNSUPPORTED_TRANSACTION_TYPE()}: ${transactionType}`,
         });
         return;
       }
@@ -585,8 +604,8 @@ define([
       log.error("POST queue error", e);
       renderForm(response, {
         transactionType: transactionType,
-        statusTitle: "Upload Failed",
-        statusMessage: "Error processing file: " + e.message,
+        statusTitle: trans.UPLOAD_FAILED(),
+        statusMessage: `${ERROR_PROCESSING_FILE}: ${e.message}`,
       });
     }
   };

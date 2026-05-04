@@ -1,7 +1,7 @@
 /**
  * @NApiVersion 2.1
  */
-define(["N/search"], (search) => {
+define(["N/search", "./i18n"], (search, i18n) => {
   const hasValue = (value) =>
     value !== null && value !== undefined && value !== "";
 
@@ -333,20 +333,28 @@ define(["N/search"], (search) => {
       return ["Uploaded CSV has no mapped headers."];
     }
 
+    const trans = i18n.load();
+
     return (requiredHeaders || [])
       .filter((headerConfig) =>
         getHeaderAliases(headerConfig).every(
           (header) => uploadedHeaders.indexOf(header) === -1,
         ),
       )
-      .map((headerConfig) => "Missing column: " + getHeaderLabel(headerConfig));
+      .map(
+        (headerConfig) =>
+          `${trans.MISSING_COLUMN()} ${getHeaderLabel(headerConfig)}`,
+      );
   };
 
   const assertValidMappedHeaders = (stagedRows, requiredHeaders) => {
+    const trans = i18n.load();
     const errors = validateMappedHeaders(stagedRows, requiredHeaders);
 
     if (errors.length > 0) {
-      throw new Error("CSV header validation failed.\n" + errors.join("\n"));
+      throw new Error(
+        `${trans.CSV_HEADER_VALIDATION_FAILED()}\n ${errors.join("\n")}`,
+      );
     }
   };
 
