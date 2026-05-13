@@ -12,6 +12,7 @@ define([], () => {
 
   const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
   const RESULT_ERROR_PREFIX = "swk_mr_errors_";
+  const RESULT_FOLDER_ID_PARAM = "custscript_swk_csv_result_folder_id";
 
   const TRANSACTION_TYPES = {
     PO: "PO",
@@ -253,6 +254,7 @@ define([], () => {
     ACTIONS,
     RESULT_SUMMARY_PREFIX,
     RESULT_ERROR_PREFIX,
+    RESULT_FOLDER_ID_PARAM,
     TRANSACTION_TYPES,
     TEMPLATE_FILE_ID_PARAMS,
     TRANSACTION_CONFIG,
