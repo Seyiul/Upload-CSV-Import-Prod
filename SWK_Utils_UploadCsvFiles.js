@@ -62,6 +62,90 @@ define(["N/search", "./i18n"], (search, i18n) => {
     return values;
   };
 
+  const parseCsvRecords = (contents) => {
+    const records = [];
+    let current = "";
+    let quoted = false;
+    let lineNumber = 1;
+    let recordLineNumber = 1;
+
+    const pushRecord = () => {
+      records.push({
+        line: current,
+        lineNumber: recordLineNumber,
+      });
+      current = "";
+      recordLineNumber = lineNumber + 1;
+    };
+
+    for (let i = 0; i < contents.length; i += 1) {
+      const char = contents[i];
+      const next = contents[i + 1];
+
+      if (char === '"' && quoted && next === '"') {
+        current += char + next;
+        i += 1;
+        continue;
+      }
+
+      if (char === '"') {
+        quoted = !quoted;
+        current += char;
+        continue;
+      }
+
+      if (char === "\r" || char === "\n") {
+        const isCrLf = char === "\r" && next === "\n";
+
+        if (quoted) {
+          current += "\n";
+        } else {
+          pushRecord();
+        }
+
+        lineNumber += 1;
+
+        if (isCrLf) {
+          i += 1;
+        }
+
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (current !== "") {
+      records.push({
+        line: current,
+        lineNumber: recordLineNumber,
+      });
+    }
+
+    return records;
+  };
+
+  function formatRichText(value) {
+    if (!value) return "";
+
+    const text = String(value);
+
+    if (/<a\s+href=/i.test(text)) {
+      return text.replace(/\r?\n/g, "<br>");
+    }
+
+    return text
+      .replace(/(https?:\/\/[^\s<]+)/gi, function (url) {
+        const escapedUrl = url
+          .replace(/"/g, "&quot;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+
+        return `<a href="${escapedUrl}" target="_blank">${escapedUrl}</a>`;
+      })
+      .replace(/\r?\n/g, "<br>");
+  }
+
   /**
    * HTML 이스케이프 처리
    * @param {*} value
@@ -117,6 +201,7 @@ define(["N/search", "./i18n"], (search, i18n) => {
     if (
       normalizedValue.indexOf(",") !== -1 ||
       normalizedValue.indexOf('"') !== -1 ||
+      normalizedValue.indexOf("\r") !== -1 ||
       normalizedValue.indexOf("\n") !== -1
     ) {
       return `"${normalizedValue.replace(/"/g, '""')}"`;
@@ -245,6 +330,7 @@ define(["N/search", "./i18n"], (search, i18n) => {
       memo: trans.MEMO(),
       terms: trans.TERMS(),
       postingperiod: trans.POSTING_PERIOD(),
+      custbody_swk_project_mainsingle: trans.MAIN_PROJECT(),
     };
 
     const fieldLabel = FIELD_LABEL_MAP[fieldId] || fieldId;
@@ -353,19 +439,18 @@ define(["N/search", "./i18n"], (search, i18n) => {
     Array.isArray(headerConfig) ? headerConfig : [headerConfig];
 
   const validateMappedHeaders = (stagedRows, requiredHeaders) => {
+    const trans = i18n.load();
     const firstRowData =
       (stagedRows && stagedRows[0] && stagedRows[0].rowData) || {};
     const uploadedHeaders = Object.keys(firstRowData);
 
     if (!stagedRows || stagedRows.length === 0) {
-      return ["Uploaded CSV has no data rows."];
+      return [trans.CSV_NO_DATA_ROWS()];
     }
 
     if (uploadedHeaders.length === 0) {
-      return ["Uploaded CSV has no mapped headers."];
+      return [trans.CSV_NO_MAPPED_HEADERS()];
     }
-
-    const trans = i18n.load();
 
     return (requiredHeaders || [])
       .filter((headerConfig) =>
@@ -407,6 +492,7 @@ define(["N/search", "./i18n"], (search, i18n) => {
 
   return {
     parseCsvLine,
+    parseCsvRecords,
     escapeHtml,
     parseDateValue,
     parseNumberValue,
@@ -429,5 +515,6 @@ define(["N/search", "./i18n"], (search, i18n) => {
     assertValidMappedHeaders,
     getErrorDisplayMessage,
     hasValue,
+    formatRichText,
   };
 });

@@ -16,7 +16,18 @@ define([
   "N/runtime",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
-], (file, log, record, runtime, csvUtils, uploadCsvConstants) => {
+  "./SWK_Utils_ValidationCheck",
+  "./i18n",
+], (
+  file,
+  log,
+  record,
+  runtime,
+  csvUtils,
+  uploadCsvConstants,
+  validCheck,
+  i18n,
+) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_po";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_po";
   const {
@@ -46,7 +57,10 @@ define([
     getHeaderLabel,
     getHeaderAliases,
     validateMappedHeaders,
+    formatRichText,
   } = csvUtils;
+
+  const { doOtherPurchaseLinesValidations } = validCheck;
 
   const FIELD_PROJECT_BODY = "custbody_swk_project_mainsingle";
   const FIELD_PROJECT_LINE = "custcol_swk_project_line";
@@ -63,7 +77,11 @@ define([
     const locationId = findLocationIdByValue(firstRowData["Location"]);
 
     if (firstRowData["Location"] && !locationId) {
-      throw new Error("Location not found: " + firstRowData["Location"]);
+      const trans = i18n.load();
+
+      throw new Error(
+        `${trans.LOCATION_NOT_FOUND()} ${firstRowData["Location"]}`,
+      );
     }
 
     setBodyValueIfPresent(
@@ -92,7 +110,11 @@ define([
       FIELD_PROJECT_BODY,
       firstRowData["Project(Main, Single)"],
     );
-    setBodyValueIfPresent(rec, "companyname", firstRowData["会社名"]);
+    setBodyValueIfPresent(
+      rec,
+      "companyname",
+      firstRowData["\u4f1a\u793e\u540d"],
+    );
     setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
     setBodyValueIfPresent(
       rec,
@@ -109,7 +131,24 @@ define([
       "exchangerate",
       parseNumberValue(firstRowData["Exchange Rate"]),
     );
-    setBodyValueIfPresent(rec, "message", firstRowData["Comments for Print"]);
+    setBodyValueIfPresent(
+      rec,
+      "custbody_swk_po_comments",
+      firstRowData["Comments for Print"],
+    );
+
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_groupwareapproval",
+      firstRowData["Groupware Approval Link"],
+    );
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_tranlink_multi",
+      formatRichText(firstRowData["Groupware Approval Multiple Link"]),
+    );
+
+    doOtherPurchaseLinesValidations(poRows);
 
     // Line 필드 매핑
     (poRows || []).forEach((row) => {
@@ -188,6 +227,7 @@ define([
   };
 
   const getInputData = () => {
+    const trans = i18n.load();
     const script = runtime.getCurrentScript();
     const fileId = script.getParameter({ name: CSV_FILE_ID_PARAM });
     const transactionType = script.getParameter({
@@ -196,10 +236,12 @@ define([
     const recordType = RECORD_TYPES[transactionType];
 
     if (!fileId) {
-      throw new Error("Missing CSV file parameter.");
+      throw new Error(trans.MISSING_CSV_FILE_PARAMETER());
     }
     if (!recordType) {
-      throw new Error("Invalid transaction type: " + transactionType);
+      throw new Error(
+        `${trans.INVALID_TRANSACTION_TYPE_WITH_VALUE()} : ${transactionType}`,
+      );
     }
 
     const stagedRows = loadStagedRows(fileId, transactionType);
@@ -222,11 +264,13 @@ define([
     const externalId = rowData["External ID"] || rowData["EXTERNAL ID"];
 
     if (!externalId) {
+      const trans = i18n.load();
+
       mapContext.write({
         key: "error",
         value: JSON.stringify({
           lineNumber: lineNumber,
-          message: "Missing External ID",
+          message: trans.MISSING_EXTERNAL_ID(),
         }),
       });
       return;
@@ -237,7 +281,7 @@ define([
       key: String(externalId),
       value: JSON.stringify(input),
     });
-    log.audit("map:write", "lineNumber=" + lineNumber + ", key=" + externalId);
+    // log.audit("map:write", "lineNumber=" + lineNumber + ", key=" + externalId);
   };
 
   const reduce = (reduceContext) => {

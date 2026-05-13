@@ -56,12 +56,38 @@ define(["N/translation"], (translation) => {
     "CURRENCY",
     "TAX_CODE",
     "ITEM",
+    "ITEM_NOT_FOUND",
     "MEMO",
     "TERMS",
     "POSTING_PERIOD",
+    "LOCATION_NOT_FOUND",
+    "MISSING_TRANSACTION_CATEGORY",
+    "MISSING_CSV_FILE_PARAMETER",
+    "INVALID_TRANSACTION_TYPE_WITH_VALUE",
+    "MAIN_PROJECT",
+    "MISSING_DEPARTMENT",
+    "MISSING_ACCOUNT",
+    "INVALID_TAX_CODE",
+    "MISSING_AMORTIZATION_SCHEDULE",
+    "INVALID_ESTIMATED_COST_ACCOUNT",
+    "MISSING_PROJECT_FOR_SALES_ENTRY",
+    "PROJECT_NOT_FOUND",
+    "SALES_NOT_ALLOWED_COST_PROJECT",
+    "SALES_NOT_ALLOWED_ASSET_PROJECT",
+    "MISSING_DEPARTMENT_FOR_COST_ACCOUNT",
+    "MISSING_PROJECT_FOR_SALES_ACCOUNT",
+    "MISSING_EXTERNAL_ID",
+    "CSV_NO_DATA_ROWS",
+    "CSV_NO_MAPPED_HEADERS",
   ];
 
+  let cachedMessages = null;
+
   const load = () => {
+    if (cachedMessages) {
+      return cachedMessages;
+    }
+
     const localized = translation.load({
       collections: [
         {
@@ -72,7 +98,8 @@ define(["N/translation"], (translation) => {
       ],
     });
 
-    return localized.msg;
+    cachedMessages = localized.msg;
+    return cachedMessages;
   };
 
   return {

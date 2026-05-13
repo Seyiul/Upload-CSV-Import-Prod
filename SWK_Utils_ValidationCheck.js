@@ -1,11 +1,22 @@
 ﻿/**
  * @NApiVersion 2.1
  */
-define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
-  search,
-  log,
-  libConstants,
-) => {
+define([
+  "N/search",
+  "N/log",
+  "../TransEntValidations/SWK_TEV_Constants",
+  "./i18n",
+], (search, log, libConstants, i18n) => {
+  let trans = null;
+
+  const getTrans = () => {
+    if (!trans) {
+      trans = i18n.load();
+    }
+
+    return trans;
+  };
+
   const hasValue = (value) => {
     if (value === null || value === undefined) {
       return false;
@@ -47,7 +58,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     );
 
     if (invalidLineNumbers.length > 0) {
-      throw new Error(`Missing ${departmentHeader}.`);
+      throw new Error(`${getTrans().MISSING_DEPARTMENT()}.`);
     }
   };
 
@@ -105,6 +116,11 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
   const isMainTransCatAcctMatched = (idCat, bUnconAcct) => {
     const LOG_TITLE = "isMainTransCatAcctMatched";
     const NOT_CONFIRMED_CAT = isNotConfirmedCat(idCat);
+
+    if (!hasValue(bUnconAcct)) {
+      throw new Error(getTrans().MISSING_ACCOUNT());
+    }
+
     const acctFields = search.lookupFields({
       type: search.Type.ACCOUNT,
       id: bUnconAcct,
@@ -284,7 +300,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
 
   const getIncomeAccountIdByItem = (itemValues) => {
     const itemIdByValue = resolveInternalIdsByValue(
-      search.Type.INVENTORY_ITEM,
+      search.Type.ITEM,
       itemValues,
       ["itemid", "name"],
     );
@@ -299,7 +315,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
 
     search
       .create({
-        type: search.Type.INVENTORY_ITEM,
+        type: search.Type.ITEM,
         filters: [["internalid", search.Operator.ANYOF, itemInternalIds]],
         columns: [
           search.createColumn({ name: "internalid" }),
@@ -318,7 +334,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       const itemInternalId = itemIdByValue[itemCode];
 
       if (!itemInternalId) {
-        throw new Error("Item not found: " + itemCode);
+        throw new Error(`${getTrans().ITEM_NOT_FOUND()} : ${itemCode}`);
       }
 
       incomeAccountIdByItem[itemCode] =
@@ -429,7 +445,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     const invalidLineNumbers = getWrongTaxLineNumbers(stagedRows);
 
     if (invalidLineNumbers.length > 0) {
-      throw new Error(`The Tax Code has been entered incorrectly.`);
+      throw new Error(getTrans().INVALID_TAX_CODE());
     }
   };
 
@@ -510,7 +526,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     const invalidLineNumbers = getMissingAmortLineNumbers(stagedRows);
 
     if (invalidLineNumbers.length > 0) {
-      throw new Error(`Please enter an amortization schedule.`);
+      throw new Error(getTrans().MISSING_AMORTIZATION_SCHEDULE());
     }
   };
 
@@ -532,9 +548,15 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
 */
   const doPurchaseLinesValidations = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+
+    const transactionCat = firstRowData["Transaction Category"];
+    if (!transactionCat) {
+      throw new Error(getTrans().MISSING_TRANSACTION_CATEGORY());
+    }
+
     const idCat = resolveInternalId(
       libConstants.REC.TRANS_CAT,
-      firstRowData["Transaction Category"],
+      transactionCat,
       ["name"],
     );
     const bUnconAcct = resolveInternalId(
@@ -547,9 +569,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
 
     //(2) Transaction Category <-> Account validation
     if (!isMainTransCatAcctMatched(idCat, bUnconAcct)) {
-      throw new Error(
-        `An incorrect account has been entered for estimated cost/expense.`,
-      );
+      throw new Error(getTrans().INVALID_ESTIMATED_COST_ACCOUNT());
     }
 
     //(1) Department / Project validation
@@ -617,7 +637,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     const invalidIncomeProjectLines = getItemIncomeAcctNoProj(stagedRows);
 
     if (invalidIncomeProjectLines.length > 0) {
-      throw new Error(`No project has been entered for the sales entry.`);
+      throw new Error(getTrans().MISSING_PROJECT_FOR_SALES_ENTRY());
     }
   };
 
@@ -653,7 +673,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       const projectId = projectIdByValue[projectCode];
 
       if (!projectId) {
-        throw new Error("Project not found : " + row.project);
+        throw new Error(`${getTrans().PROJECT_NOT_FOUND()} : ${row.project}`);
       }
 
       projectIds.push(projectId);
@@ -700,9 +720,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       getCostCollectorProject(stagedRows);
 
     if (invalidCostCollectorProjectLines.length > 0) {
-      throw new Error(
-        `Sales cannot be entered for a cost-accumulation project.`,
-      );
+      throw new Error(getTrans().SALES_NOT_ALLOWED_COST_PROJECT());
     }
   };
 
@@ -762,7 +780,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     const invalidLineNumbers = getWrongTaxLineNumbersForSo(stagedRows);
 
     if (invalidLineNumbers.length > 0) {
-      throw new Error(`The Tax Code has been entered incorrectly.`);
+      throw new Error(getTrans().INVALID_TAX_CODE());
     }
   };
 
@@ -797,7 +815,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
       const projectId = projectIdByValue[projectCode];
 
       if (!projectId) {
-        throw new Error("Project not found : " + row.project);
+        throw new Error(`${getTrans().PROJECT_NOT_FOUND()} : ${row.project}`);
       }
 
       projectIds.push(projectId);
@@ -845,7 +863,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     const invalidtAssetProjectLines = getAssetProject(stagedRows);
 
     if (invalidtAssetProjectLines.length > 0) {
-      throw new Error(`Sales cannot be entered for an asset creation project.`);
+      throw new Error(getTrans().SALES_NOT_ALLOWED_ASSET_PROJECT());
     }
   };
 
@@ -879,9 +897,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     );
 
     if (!isMainTransCatAcctMatched(idCat, bUnconAcct)) {
-      throw new Error(
-        `An incorrect account has been entered for estimated cost/expense.`,
-      );
+      throw new Error(getTrans().INVALID_ESTIMATED_COST_ACCOUNT());
     }
 
     // (1) Project의 Cost Collector By ID 체크 여부
@@ -995,9 +1011,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     );
 
     if (invalidLineNumbers.length > 0) {
-      throw new Error(
-        `A department has not been entered for the cost account. `,
-      );
+      throw new Error(getTrans().MISSING_DEPARTMENT_FOR_COST_ACCOUNT());
     }
   };
 
@@ -1040,7 +1054,7 @@ define(["N/search", "N/log", "../TransEntValidations/SWK_TEV_Constants"], (
     );
 
     if (invalidLineNumbers.length > 0) {
-      throw new Error(`A project has not been entered for the sales account.`);
+      throw new Error(getTrans().MISSING_PROJECT_FOR_SALES_ACCOUNT());
     }
   };
 

@@ -110,7 +110,7 @@ define([], () => {
       "Date",
       "Transaction Category",
       "Project(Main, Single)",
-      "会社名",
+      "\u4f1a\u793e\u540d",
       "Terms",
       "Receive By",
       "Memo",
@@ -128,6 +128,8 @@ define([], () => {
       "Department(Line)",
       "Project(Line)",
       ["Project(Seg)", "Project(seg)"],
+      "Groupware Approval Multiple Link",
+      "Groupware Approval Link",
     ],
     BILL: [
       "External ID",
@@ -158,6 +160,8 @@ define([], () => {
       "Project(Main, Single)",
       "Apply WHT",
       "Residual",
+      "Groupware Approval Multiple Link",
+      "Groupware Approval Link",
     ],
     BILL_ITEM: [
       "External ID",
@@ -192,6 +196,8 @@ define([], () => {
       "Amort. Start",
       "Amort. End",
       "Residual",
+      "Groupware Approval Multiple Link",
+      "Groupware Approval Link",
     ],
     INVOICE: [
       ["External ID", "EXTERNAL ID"],
@@ -218,6 +224,8 @@ define([], () => {
       "Department(Line)",
       "Project(Line)",
       "Project(seg)",
+      "Groupware Approval Multiple Link",
+      "Groupware Approval Link",
     ],
     JOURNAL: [
       "External ID",

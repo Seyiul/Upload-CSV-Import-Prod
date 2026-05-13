@@ -68,6 +68,20 @@ define([
       params: params || {},
     });
 
+  const getTemplateName = (transactionType, trans) => {
+    const templateNames = {
+      PO: trans.PO_TEMPLATE(),
+      BILL: trans.BILL_EXPENSE_TEMPLATE(),
+      BILL_ITEM: trans.BILL_ITEM_TEMPLATE(),
+      INVOICE: trans.INVOICE_TEMPLATE(),
+      JOURNAL: trans.JOURNAL_TEMPLATE(),
+    };
+
+    return (
+      templateNames[transactionType] || trans.SELECT_TRANSACTION_TYPE_REQUIRED()
+    );
+  };
+
   const writeText = (response, output) => {
     response.write({
       output: output,
@@ -130,8 +144,7 @@ define([
       container: "custpage_group_template_download",
     });
     templateNameField.defaultValue =
-      transactionConfig.templateName ||
-      trans.SELECT_TRANSACTION_TYPE_REQUIRED();
+      getTemplateName(transactionType, trans);
     templateNameField.updateDisplayType({
       displayType: serverWidget.FieldDisplayType.INLINE,
     });
@@ -358,28 +371,34 @@ define([
   // 업로드한 CSV 파일 Parsing하여 rowData 형태로 변환
   const getUploadedCsvRows = (uploadedFile, transactionType) => {
     uploadedFile.encoding = file.Encoding.UTF8;
-    const lines = uploadedFile
-      .getContents()
-      .replace(/^\uFEFF/, "")
-      .split(/\r?\n/)
-      .filter((line) => line.trim() !== "");
+    const records = csvUtils
+      .parseCsvRecords(uploadedFile.getContents().replace(/^\uFEFF/, ""))
+      .filter((record) => record.line.trim() !== "");
 
-    const headers = lines.length > 0 ? csvUtils.parseCsvLine(lines[0]) : [];
+    const headers =
+      records.length > 0 ? csvUtils.parseCsvLine(records[0].line) : [];
 
-    return lines.slice(1).map((line, index) => {
-      const values = csvUtils.parseCsvLine(line);
-      const rowData = {};
+    return records
+      .slice(1)
+      .map((record) => {
+        const values = csvUtils.parseCsvLine(record.line);
+        const rowData = {};
 
-      for (let i = 0; i < headers.length; i += 1) {
-        rowData[headers[i]] = values[i] || "";
-      }
+        for (let i = 0; i < headers.length; i += 1) {
+          rowData[headers[i]] = values[i] || "";
+        }
 
-      return {
-        lineNumber: index + 2,
-        transactionType: transactionType,
-        rowData: rowData,
-      };
-    });
+        return {
+          lineNumber: record.lineNumber,
+          transactionType: transactionType,
+          rowData: rowData,
+        };
+      })
+      .filter((row) =>
+        Object.keys(row.rowData || {}).some((header) =>
+          csvUtils.hasValue(row.rowData[header]),
+        ),
+      );
   };
 
   // RowData를 기반으로 Staging File 저장

@@ -17,7 +17,17 @@ define([
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
   "./SWK_Utils_ValidationCheck",
-], (file, log, record, runtime, csvUtils, uploadCsvConstants, validCheck) => {
+  "./i18n",
+], (
+  file,
+  log,
+  record,
+  runtime,
+  csvUtils,
+  uploadCsvConstants,
+  validCheck,
+  i18n,
+) => {
   const CSV_FILE_ID_PARAM_JN = "custscript_swk_csv_file_id_jn";
   const TRANSACTION_TYPE_PARAM_JN = "custscript_swk_csv_tran_type_jn";
   const {
@@ -178,6 +188,7 @@ define([
   };
 
   const getInputData = () => {
+    const trans = i18n.load();
     const script = runtime.getCurrentScript();
     const fileId = script.getParameter({ name: CSV_FILE_ID_PARAM_JN });
     const transactionType = script.getParameter({
@@ -186,10 +197,12 @@ define([
     const recordType = RECORD_TYPES[transactionType];
 
     if (!fileId) {
-      throw new Error("Missing CSV file parameter.");
+      throw new Error(trans.MISSING_CSV_FILE_PARAMETER());
     }
     if (!recordType) {
-      throw new Error("Invalid transaction type: " + transactionType);
+      throw new Error(
+        `${trans.INVALID_TRANSACTION_TYPE_WITH_VALUE()} : ${transactionType}`,
+      );
     }
 
     const stagedRows = loadStagedRows(fileId, transactionType);
@@ -212,11 +225,13 @@ define([
     const externalId = rowData["External ID"];
 
     if (!externalId) {
+      const trans = i18n.load();
+
       mapContext.write({
         key: "error",
         value: JSON.stringify({
           lineNumber: lineNumber,
-          message: "Missing External ID",
+          message: trans.MISSING_EXTERNAL_ID(),
         }),
       });
       return;
