@@ -4,8 +4,6 @@
  * @NModuleScope SameAccount
  */
 define(["N/log", "N/url", "./i18n"], function (log, url, i18n) {
-  const trans = i18n.load();
-
   const SUITELET_SCRIPT_ID = "customscript_swk_sl_uploadcsvfile";
   const SUITELET_DEPLOYMENT_ID = "customdeploy_swk_sl_uploadcsvfile";
 
@@ -17,12 +15,18 @@ define(["N/log", "N/url", "./i18n"], function (log, url, i18n) {
     stagingFileId: "custpage_staging_file_id",
   };
 
-  const TEMPLATE_NAMES = {
-    PO: trans.PO_TEMPLATE(),
-    BILL: trans.BILL_EXPENSE_TEMPLATE(),
-    BILL_ITEM: trans.BILL_ITEM_TEMPLATE(),
-    INVOICE: trans.INVOICE_TEMPLATE(),
-    JOURNAL: trans.JOURNAL_TEMPLATE(),
+  const getTrans = () => i18n.load();
+
+  const getTemplateNames = () => {
+    const trans = getTrans();
+
+    return {
+      PO: trans.PO_TEMPLATE(),
+      BILL: trans.BILL_EXPENSE_TEMPLATE(),
+      BILL_ITEM: trans.BILL_ITEM_TEMPLATE(),
+      INVOICE: trans.INVOICE_TEMPLATE(),
+      JOURNAL: trans.JOURNAL_TEMPLATE(),
+    };
   };
 
   const TEMPLATE_LINK_DEFAULT_TEXT = "";
@@ -39,14 +43,21 @@ define(["N/log", "N/url", "./i18n"], function (log, url, i18n) {
       params: params || {},
     });
 
-  const getTemplateName = (transactionType) =>
-    TEMPLATE_NAMES[transactionType] || trans.SELECT_TRANSACTION_TYPE_REQUIRED();
+  const getTemplateName = (transactionType) => {
+    const trans = getTrans();
+    const templateNames = getTemplateNames();
+
+    return (
+      templateNames[transactionType] || trans.SELECT_TRANSACTION_TYPE_REQUIRED()
+    );
+  };
 
   const ensureLoadingOverlay = () => {
     if (document.getElementById("swk-upload-loading")) {
       return;
     }
 
+    const trans = getTrans();
     const overlay = document.createElement("div");
     overlay.id = "swk-upload-loading";
     overlay.style.cssText =
@@ -77,6 +88,7 @@ define(["N/log", "N/url", "./i18n"], function (log, url, i18n) {
   };
 
   const updateTemplateLink = (templateName, templateUrl) => {
+    const trans = getTrans();
     const container = document.getElementById(
       "custpage_template_link_container",
     );
