@@ -126,7 +126,11 @@ define([
       "custbody_swk_transcategory",
       firstRowData["Transaction Category"],
     );
-
+    setBodyTextIfPresent(
+      rec,
+      "custbody_15529_vendor_entity_bank",
+      firstRowData["Entity Bank"],
+    );
     setBodyTextIfPresent(
       rec,
       FIELD_PROJECT_BODY,

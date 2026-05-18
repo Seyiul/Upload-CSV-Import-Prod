@@ -163,6 +163,7 @@ define([], () => {
       "Residual",
       "Groupware Approval Multiple Link",
       "Groupware Approval Link",
+      "Entity Bank",
     ],
     BILL_ITEM: [
       "External ID",
@@ -199,6 +200,7 @@ define([], () => {
       "Residual",
       "Groupware Approval Multiple Link",
       "Groupware Approval Link",
+      "Entity Bank",
     ],
     INVOICE: [
       ["External ID", "EXTERNAL ID"],
