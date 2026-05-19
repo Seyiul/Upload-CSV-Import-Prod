@@ -15,6 +15,7 @@ define([
   "N/log",
   "N/record",
   "N/runtime",
+  "N/search",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
   "./SWK_Utils_ValidationCheck",
@@ -24,6 +25,7 @@ define([
   log,
   record,
   runtime,
+  search,
   csvUtils,
   uploadCsvConstants,
   validCheck,
@@ -31,6 +33,7 @@ define([
 ) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
+  const UPLOAD_OPTION_PARAM = "custscript_swk_csv_upload_option";
   const {
     RECORD_TYPES,
     REQUIRED_CSV_HEADERS,
@@ -243,6 +246,237 @@ define([
     return rec.save();
   };
 
+  const findBillIdByExternalId = (externalId) => {
+    if (!externalId) {
+      return null;
+    }
+
+    const results = search
+      .create({
+        type: record.Type.VENDOR_BILL,
+        filters: [["externalidstring", "is", String(externalId)]],
+        columns: ["internalid"],
+      })
+      .run()
+      .getRange({ start: 0, end: 1 });
+
+    if (!results || results.length === 0) {
+      return null;
+    }
+
+    return results[0].getValue({ name: "internalid" });
+  };
+
+  const removeExpenseLines = (rec) => {
+    const lineCount = rec.getLineCount({ sublistId: "expense" });
+
+    for (let line = lineCount - 1; line >= 0; line -= 1) {
+      rec.removeLine({
+        sublistId: "expense",
+        line: line,
+        ignoreRecalc: true,
+      });
+    }
+  };
+
+  const updateBillRecord = (billRows, existingBillId) => {
+    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+    const rec = record.load({
+      type: record.Type.VENDOR_BILL,
+      id: existingBillId,
+      isDynamic: true,
+    });
+    const locationId = findLocationIdByValue(firstRowData["Location"]);
+
+    if (firstRowData["Location"] && !locationId) {
+      const trans = i18n.load();
+
+      throw new Error(
+        `${trans.LOCATION_NOT_FOUND()} ${firstRowData["Location"]}`,
+      );
+    }
+
+    setBodyValueIfPresent(rec, "externalid", firstRowData["External ID"]);
+    setBodyTextIfPresent(rec, "entity", firstRowData["Vendor"]);
+    setBodyValueIfPresent(
+      rec,
+      "custbody_swk_bill_vendorqual",
+      parseCheckboxValue(firstRowData["Qualified Invoice Issuer"]),
+    );
+    setBodyValueIfPresent(
+      rec,
+      "custbody_swk_wht_update",
+      parseCheckboxValue(firstRowData["Manual Update"]),
+    );
+    setBodyValueIfPresent(
+      rec,
+      "trandate",
+      parseDateValue(firstRowData["Date"]),
+    );
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_bill_whtamt",
+      firstRowData["WHT Amount"],
+    );
+    setBodyValueIfPresent(rec, "tranid", firstRowData["Reference No."]);
+    setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
+    setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
+    setBodyTextIfPresent(rec, "department", firstRowData["Department"]);
+    setBodyValueIfPresent(rec, "location", locationId);
+    setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_transcategory",
+      firstRowData["Transaction Category"],
+    );
+    setBodyTextIfPresent(
+      rec,
+      "custbody_15529_vendor_entity_bank",
+      firstRowData["Entity Bank"],
+    );
+    setBodyTextIfPresent(
+      rec,
+      FIELD_PROJECT_BODY,
+      firstRowData["Project(Main, Single)"],
+    );
+
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_groupwareapproval",
+      firstRowData["Groupware Approval Link"],
+    );
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_tranlink_multi",
+      formatRichText(firstRowData["Groupware Approval Multiple Link"]),
+    );
+
+    doPurchaseLinesValidations(billRows);
+    removeExpenseLines(rec);
+
+    (billRows || []).forEach((row, idx) => {
+      const rowData = row.rowData || {};
+
+      rec.selectNewLine({ sublistId: "expense" });
+
+      setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        "account",
+        rowData["Expense Account"],
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "memo",
+        rowData["Description"],
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "amount",
+        parseNumberValue(rowData["Amount"]),
+      );
+
+      setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        "department",
+        rowData["Department(Line)"],
+      );
+
+      setCurrentLineValueIfPresent(rec, "expense", "location", locationId);
+      setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        "taxcode",
+        rowData["Tax Code"],
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "tax1amt",
+        parseNumberValue(rowData["Tax AMT"]),
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "custcol_swk_billline_wht",
+        parseCheckboxValue(rowData["Apply WHT"]),
+      );
+      setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        "amortizationsched",
+        rowData["Amort. Schedule"],
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "amortizstartdate",
+        parseDateValue(rowData["Amort. Start"]),
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "amortizationenddate",
+        parseDateValue(rowData["Amort. End"]),
+      );
+
+      setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        FIELD_PROJECT_LINE,
+        rowData["Project(Line)"],
+      );
+      setCurrentLineTextIfPresent(
+        rec,
+        "expense",
+        FIELD_PROJECT_SEG,
+        rowData["Project(Seg)"],
+      );
+      setCurrentLineValueIfPresent(
+        rec,
+        "expense",
+        "amortizationresidual",
+        parseNumberValue(rowData["Residual"]),
+      );
+      rec.commitLine({ sublistId: "expense" });
+    });
+
+    return rec.save();
+  };
+
+  const submitBillRecord = (billRows, uploadOption) => {
+    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+    const externalId = firstRowData["External ID"];
+    const normalizedUploadOption = uploadOption || "ADD";
+    const existingBillId =
+      normalizedUploadOption === "ADD"
+        ? null
+        : findBillIdByExternalId(externalId);
+
+    if (normalizedUploadOption === "ADD") {
+      return createBillRecord(billRows);
+    }
+
+    if (normalizedUploadOption === "UPDATE") {
+      if (!existingBillId) {
+        throw new Error("Vendor Bill not found for External ID: " + externalId);
+      }
+
+      return updateBillRecord(billRows, existingBillId);
+    }
+
+    if (normalizedUploadOption === "UPSERT") {
+      return existingBillId
+        ? updateBillRecord(billRows, existingBillId)
+        : createBillRecord(billRows);
+    }
+
+    throw new Error("Unsupported upload option: " + normalizedUploadOption);
+  };
+
   const loadStagedRows = (fileId, transactionType) => {
     if (!fileId) {
       return [];
@@ -277,6 +511,9 @@ define([
     const transactionType = script.getParameter({
       name: TRANSACTION_TYPE_PARAM,
     });
+    const uploadOption = script.getParameter({
+      name: UPLOAD_OPTION_PARAM,
+    });
     const recordType = RECORD_TYPES[transactionType];
 
     if (!fileId) {
@@ -296,6 +533,7 @@ define([
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
+      uploadOption: uploadOption,
       recordType: recordType,
       rowData: row.rowData || {},
     }));
@@ -330,10 +568,14 @@ define([
 
   const reduce = (reduceContext) => {
     const billRows = reduceContext.values.map((value) => JSON.parse(value));
+    const firstValue = reduceContext.values[0]
+      ? JSON.parse(reduceContext.values[0])
+      : {};
+    const uploadOption = firstValue.uploadOption || "ADD";
 
     try {
-      const recordId = createBillRecord(billRows);
-
+      let recordId = "";
+      recordId = submitBillRecord(billRows, uploadOption);
       reduceContext.write({
         key: "success",
         value: JSON.stringify({

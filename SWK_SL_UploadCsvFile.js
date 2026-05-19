@@ -152,8 +152,7 @@ define([
       label: trans.TEMPLATE(),
       container: "custpage_group_template_download",
     });
-    templateNameField.defaultValue =
-      getTemplateName(transactionType, trans);
+    templateNameField.defaultValue = getTemplateName(transactionType, trans);
     templateNameField.updateDisplayType({
       displayType: serverWidget.FieldDisplayType.INLINE,
     });
@@ -202,6 +201,28 @@ define([
     if (transactionType) {
       transactionTypeField.defaultValue = transactionType;
     }
+
+    const UploadOptionField = form.addField({
+      id: "custpage_upload_option",
+      type: serverWidget.FieldType.SELECT,
+      label: "Upload Option",
+      container: "custpage_group_upload_options",
+    });
+
+    UploadOptionField.isMandatory = true;
+
+    UploadOptionField.addSelectOption({
+      value: "ADD",
+      text: "Add",
+    });
+    UploadOptionField.addSelectOption({
+      value: "UPDATE",
+      text: "Update",
+    });
+    UploadOptionField.addSelectOption({
+      value: "UPSERT",
+      text: "Add or Update",
+    });
 
     // Map/Reduce Task ID와 Staging File ID를 저장하는 숨겨진 필드 START
     const taskIdField = form.addField({
@@ -436,7 +457,11 @@ define([
     return stagingFile.save();
   };
 
-  const submitProcessingTask = (transactionType, stagingFileId) => {
+  const submitProcessingTask = (
+    transactionType,
+    stagingFileId,
+    uploadOption,
+  ) => {
     const transactionConfig = getTransactionConfig(transactionType);
     const taskConfig = transactionConfig && transactionConfig.task;
 
@@ -451,6 +476,7 @@ define([
       params: {
         [taskConfig.params.fileId]: stagingFileId,
         [taskConfig.params.transactionType]: transactionType,
+        [taskConfig.params.uploadOption]: uploadOption,
       },
     });
 
@@ -577,6 +603,7 @@ define([
     const { request, response } = scriptContext;
     const transactionType = request.parameters.custpage_transaction_type;
     const uploadedFile = request.files.custpage_import_file;
+    const uploadOption = request.parameters.custpage_upload_option;
     const transactionConfig = getTransactionConfig(transactionType);
 
     log.debug("Received POST request, queueing MR");
@@ -617,7 +644,11 @@ define([
       );
 
       // Map/Reduce Task 제출
-      const taskId = submitProcessingTask(transactionType, stagingFileId);
+      const taskId = submitProcessingTask(
+        transactionType,
+        stagingFileId,
+        uploadOption,
+      );
       if (!taskId) {
         renderForm(response, {
           transactionType: transactionType,
