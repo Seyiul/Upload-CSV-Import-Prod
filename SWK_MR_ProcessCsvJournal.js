@@ -231,9 +231,9 @@ define([
       isDynamic: true,
     });
 
+    removeJournalLines(rec);
     setJnBodyFields(rec, firstRowData);
     doJournalLinesValdations(journalRows);
-    removeJournalLines(rec);
     addJnLines(rec, journalRows);
 
     const recordId = rec.save();
