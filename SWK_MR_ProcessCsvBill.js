@@ -78,14 +78,7 @@ define([
     return normalizedValue === "T" || normalizedValue === "TRUE";
   };
 
-  const createBillRecord = (billRows) => {
-    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
-
-    // Body 필드 매핑
-    const rec = record.create({
-      type: record.Type.VENDOR_BILL,
-      isDynamic: true,
-    });
+  const setBillBodyFields = (rec, firstRowData) => {
     const locationId = findLocationIdByValue(firstRowData["Location"]);
 
     if (firstRowData["Location"] && !locationId) {
@@ -151,8 +144,10 @@ define([
       formatRichText(firstRowData["Groupware Approval Multiple Link"]),
     );
 
-    doPurchaseLinesValidations(billRows);
+    return locationId;
+  };
 
+  const addBillExpenseLines = (rec, billRows, locationId) => {
     // CSV의 각 행을 Vendor Bill의 Expense 라인으로 매핑
     (billRows || []).forEach((row) => {
       const rowData = row.rowData || {};
@@ -242,6 +237,20 @@ define([
       );
       rec.commitLine({ sublistId: "expense" });
     });
+  };
+
+  const createBillRecord = (billRows) => {
+    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+
+    // Body 필드 매핑
+    const rec = record.create({
+      type: record.Type.VENDOR_BILL,
+      isDynamic: true,
+    });
+    const locationId = setBillBodyFields(rec, firstRowData);
+
+    doPurchaseLinesValidations(billRows);
+    addBillExpenseLines(rec, billRows, locationId);
 
     return rec.save();
   };
@@ -286,163 +295,11 @@ define([
       id: existingBillId,
       isDynamic: true,
     });
-    const locationId = findLocationIdByValue(firstRowData["Location"]);
-
-    if (firstRowData["Location"] && !locationId) {
-      const trans = i18n.load();
-
-      throw new Error(
-        `${trans.LOCATION_NOT_FOUND()} ${firstRowData["Location"]}`,
-      );
-    }
-
-    setBodyValueIfPresent(rec, "externalid", firstRowData["External ID"]);
-    setBodyTextIfPresent(rec, "entity", firstRowData["Vendor"]);
-    setBodyValueIfPresent(
-      rec,
-      "custbody_swk_bill_vendorqual",
-      parseCheckboxValue(firstRowData["Qualified Invoice Issuer"]),
-    );
-    setBodyValueIfPresent(
-      rec,
-      "custbody_swk_wht_update",
-      parseCheckboxValue(firstRowData["Manual Update"]),
-    );
-    setBodyValueIfPresent(
-      rec,
-      "trandate",
-      parseDateValue(firstRowData["Date"]),
-    );
-    setBodyTextIfPresent(
-      rec,
-      "custbody_swk_bill_whtamt",
-      firstRowData["WHT Amount"],
-    );
-    setBodyValueIfPresent(rec, "tranid", firstRowData["Reference No."]);
-    setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
-    setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
-    setBodyTextIfPresent(rec, "department", firstRowData["Department"]);
-    setBodyValueIfPresent(rec, "location", locationId);
-    setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
-    setBodyTextIfPresent(
-      rec,
-      "custbody_swk_transcategory",
-      firstRowData["Transaction Category"],
-    );
-    setBodyTextIfPresent(
-      rec,
-      "custbody_15529_vendor_entity_bank",
-      firstRowData["Entity Bank"],
-    );
-    setBodyTextIfPresent(
-      rec,
-      FIELD_PROJECT_BODY,
-      firstRowData["Project(Main, Single)"],
-    );
-
-    setBodyTextIfPresent(
-      rec,
-      "custbody_swk_groupwareapproval",
-      firstRowData["Groupware Approval Link"],
-    );
-    setBodyTextIfPresent(
-      rec,
-      "custbody_swk_tranlink_multi",
-      formatRichText(firstRowData["Groupware Approval Multiple Link"]),
-    );
+    const locationId = setBillBodyFields(rec, firstRowData);
 
     doPurchaseLinesValidations(billRows);
     removeExpenseLines(rec);
-
-    (billRows || []).forEach((row, idx) => {
-      const rowData = row.rowData || {};
-
-      rec.selectNewLine({ sublistId: "expense" });
-
-      setCurrentLineTextIfPresent(
-        rec,
-        "expense",
-        "account",
-        rowData["Expense Account"],
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "expense",
-        "memo",
-        rowData["Description"],
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "expense",
-        "amount",
-        parseNumberValue(rowData["Amount"]),
-      );
-
-      setCurrentLineTextIfPresent(
-        rec,
-        "expense",
-        "department",
-        rowData["Department(Line)"],
-      );
-
-      setCurrentLineValueIfPresent(rec, "expense", "location", locationId);
-      setCurrentLineTextIfPresent(
-        rec,
-        "expense",
-        "taxcode",
-        rowData["Tax Code"],
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "expense",
-        "tax1amt",
-        parseNumberValue(rowData["Tax AMT"]),
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "expense",
-        "custcol_swk_billline_wht",
-        parseCheckboxValue(rowData["Apply WHT"]),
-      );
-      setCurrentLineTextIfPresent(
-        rec,
-        "expense",
-        "amortizationsched",
-        rowData["Amort. Schedule"],
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "expense",
-        "amortizstartdate",
-        parseDateValue(rowData["Amort. Start"]),
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "expense",
-        "amortizationenddate",
-        parseDateValue(rowData["Amort. End"]),
-      );
-
-      setCurrentLineTextIfPresent(
-        rec,
-        "expense",
-        FIELD_PROJECT_LINE,
-        rowData["Project(Line)"],
-      );
-      setCurrentLineTextIfPresent(
-        rec,
-        "expense",
-        FIELD_PROJECT_SEG,
-        rowData["Project(Seg)"],
-      );
-      setCurrentLineValueIfPresent(
-        rec,
-        "expense",
-        "amortizationresidual",
-        parseNumberValue(rowData["Residual"]),
-      );
-      rec.commitLine({ sublistId: "expense" });
-    });
+    addBillExpenseLines(rec, billRows, locationId);
 
     return rec.save();
   };
