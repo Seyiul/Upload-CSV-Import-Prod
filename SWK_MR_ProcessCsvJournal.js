@@ -8,12 +8,15 @@
  * ----------- -------------   --------------    --------------------------------------
  * 1.00         2026-04-13        Seulyi           Initial development
  * 1.01         2026-04-21        Seulyi           Added header validation and error handling improvements
+ * 1.02         2026-05-20        Seulyi           Add Upload Option (Add/Update/Upsert) and related logic in map/reduce functions
+ *
  */
 define([
   "N/file",
   "N/log",
   "N/record",
   "N/runtime",
+  "N/search",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
   "./SWK_Utils_ValidationCheck",
@@ -23,6 +26,7 @@ define([
   log,
   record,
   runtime,
+  search,
   csvUtils,
   uploadCsvConstants,
   validCheck,
@@ -30,6 +34,7 @@ define([
 ) => {
   const CSV_FILE_ID_PARAM_JN = "custscript_swk_csv_file_id_jn";
   const TRANSACTION_TYPE_PARAM_JN = "custscript_swk_csv_tran_type_jn";
+  const UPLOAD_OPTION_PARAM = "custscript_swk_csv_upload_option_jn";
   const {
     RECORD_TYPES,
     REQUIRED_CSV_HEADERS,
@@ -61,21 +66,60 @@ define([
 
   const { doJournalLinesValdations } = validCheck;
 
-  const createJournalRecord = (journalRows) => {
+  const findJnIdByExternalId = (externalId) => {
+    if (!hasValue(externalId)) return null;
+
+    const results = search
+      .create({
+        type: record.Type.JOURNAL_ENTRY,
+        filters: [["externalidstring", "is", externalId]],
+        columns: ["internalid"],
+      })
+      .run()
+      .getRange({ start: 0, end: 1 });
+
+    if (!results || results.length === 0) {
+      return null;
+    }
+
+    return results[0].getValue({ name: "internalid" });
+  };
+
+  const submitJnRecord = (journalRows, uploadOption) => {
     const firstRowData =
       (journalRows && journalRows[0] && journalRows[0].rowData) || {};
-    // log.audit(
-    //   "createJournalRecord:start",
-    //   "externalId=" +
-    //     (firstRowData["External ID"] || "") +
-    //     ", lines=" +
-    //     ((journalRows && journalRows.length) || 0),
-    // );
-    const rec = record.create({
-      type: record.Type.JOURNAL_ENTRY,
-      isDynamic: true,
-    });
 
+    const externalId = firstRowData["External ID"];
+    const normalizedUploadOption = uploadOption || "ADD";
+    const existingJnId =
+      normalizedUploadOption === "ADD"
+        ? null
+        : findJnIdByExternalId(externalId);
+
+    if (normalizedUploadOption === "ADD") {
+      return createJournalRecord(journalRows);
+    }
+
+    if (normalizedUploadOption === "UPDATE") {
+      if (!existingJnId) {
+        throw new Error(
+          "Journal Entry not found for External ID: " + externalId,
+        );
+      }
+
+      return updateJournalRecord(journalRows, existingJnId);
+    }
+
+    if (normalizedUploadOption === "UPSERT") {
+      return existingJnId
+        ? updateJournalRecord(journalRows, existingJnId)
+        : createJournalRecord(journalRows);
+    }
+
+    throw new Error("Unsupported upload option: " + normalizedUploadOption);
+  };
+
+  const setJnBodyFields = (rec, firstRowData) => {
     // Main Body 필드 설정
     setBodyValueIfPresent(rec, "externalid", firstRowData["External ID"]);
     setBodyValueIfPresent(
@@ -101,22 +145,12 @@ define([
       "exchangerate",
       parseNumberValue(firstRowData["Exchange Rate"]),
     );
+  };
 
-    doJournalLinesValdations(journalRows);
-
+  const addJnLines = (rec, journalRows) => {
     // Journal Entry 라인 설정
     (journalRows || []).forEach((journalRow) => {
       const rowData = journalRow.rowData || {};
-
-      // log.audit(
-      //   "createJournalRecord:line",
-      //   "Processing line with Account: " +
-      //     rowData["Account"] +
-      //     ", Debit: " +
-      //     rowData["Debit"] +
-      //     ", Credit: " +
-      //     rowData["Credit"],
-      // );
 
       rec.selectNewLine({ sublistId: "line" });
 
@@ -157,9 +191,52 @@ define([
 
       rec.commitLine({ sublistId: "line" });
     });
+  };
+
+  const removeJournalLines = (rec) => {
+    const lineCount = rec.getLineCount({ sublistId: "line" });
+
+    for (let line = lineCount - 1; line >= 0; line -= 1) {
+      rec.removeLine({
+        sublistId: "line",
+        line: line,
+        ignoreRecalc: true,
+      });
+    }
+  };
+
+  const createJournalRecord = (journalRows) => {
+    const firstRowData =
+      (journalRows && journalRows[0] && journalRows[0].rowData) || {};
+
+    const rec = record.create({
+      type: record.Type.JOURNAL_ENTRY,
+      isDynamic: true,
+    });
+
+    setJnBodyFields(rec, firstRowData);
+    doJournalLinesValdations(journalRows);
+    addJnLines(rec, journalRows);
 
     const recordId = rec.save();
-    // log.audit("createJournalRecord:saved", "recordId=" + recordId);
+    return recordId;
+  };
+
+  const updateJournalRecord = (journalRows, existingJnId) => {
+    const firstRowData =
+      (journalRows && journalRows[0] && journalRows[0].rowData) || {};
+    const rec = record.load({
+      type: record.Type.JOURNAL_ENTRY,
+      id: existingJnId,
+      isDynamic: true,
+    });
+
+    setJnBodyFields(rec, firstRowData);
+    doJournalLinesValdations(journalRows);
+    removeJournalLines(rec);
+    addJnLines(rec, journalRows);
+
+    const recordId = rec.save();
     return recordId;
   };
 
@@ -194,6 +271,9 @@ define([
     const transactionType = script.getParameter({
       name: TRANSACTION_TYPE_PARAM_JN,
     });
+    const uploadOption = script.getParameter({
+      name: UPLOAD_OPTION_PARAM,
+    });
     const recordType = RECORD_TYPES[transactionType];
 
     if (!fileId) {
@@ -213,6 +293,7 @@ define([
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
+      uploadOption: uploadOption,
       recordType: recordType,
       rowData: row.rowData || {},
     }));
@@ -247,9 +328,13 @@ define([
 
   const reduce = (reduceContext) => {
     const journalRows = reduceContext.values.map((value) => JSON.parse(value));
+    const firstValue = reduceContext.values[0]
+      ? JSON.parse(reduceContext.values[0])
+      : {};
+    const uploadOption = firstValue.uploadOption || "ADD";
 
     try {
-      const recordId = createJournalRecord(journalRows);
+      const recordId = submitJnRecord(journalRows, uploadOption);
 
       reduceContext.write({
         key: "success",
@@ -258,6 +343,7 @@ define([
           recordId: recordId,
         }),
       });
+
       // log.audit(
       //   "reduce:success",
       //   "key=" + reduceContext.key + ", recordId=" + recordId,

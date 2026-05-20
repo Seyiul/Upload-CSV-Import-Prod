@@ -8,6 +8,7 @@
  * ----------- -------------   --------------    --------------------------------------
  * 1.00         2026-04-13        Seulyi           Initial development
  * 1.01         2026-04-21        Seulyi           Added header validation and error handling improvements
+ * 1.02         2026-05-20        Seulyi           Add Upload Option (Add/Update/Upsert) and related logic in map/reduce functions
  *
  */
 define([
