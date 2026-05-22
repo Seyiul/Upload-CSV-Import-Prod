@@ -112,6 +112,26 @@ define([
     return null;
   };
 
+  /** Entity Bank Validation */
+  const getMissingEntityBankLineNumbers = (firstRowData, transactionCat) => {
+    const terms = firstRowData["Terms"];
+    if (
+      terms !== "海外送金(Overseas remittance)" &&
+      terms !== "口座引落(Direct debit)" &&
+      ![
+        "예정 원가/매출 - 취소",
+        "예정 원가/매출 -",
+        "予定原価/売上",
+        "予定原価/売上－取消",
+      ].includes(transactionCat)
+    ) {
+      const entityBank = firstRowData["Entity Bank"];
+      if (!entityBank) {
+        throw new Error(getTrans().MISSING_ENTITY_BANK());
+      }
+    }
+  };
+
   /** Transaction Category (Not Confirmed / Cancel) */
   const isMainTransCatAcctMatched = (idCat, bUnconAcct) => {
     const LOG_TITLE = "isMainTransCatAcctMatched";
@@ -545,6 +565,8 @@ define([
     (4) (Expense) Account의 SWK Account Flag가 "Amortization Account"일 경우
       아래 항목은 필수 입력
       Amort. Schedule, Amort. Start, Amort. End
+
+    (5) Terms != 海外送金(Overseas remittance),口座引落(Direct debit) && Transaction Category != 예정 원가/매출 - 취소,예정 원가/매출 - 경우에는 Entity Bank 필드가 입력되어야 함
 */
   const doPurchaseLinesValidations = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
@@ -571,6 +593,9 @@ define([
     if (!isMainTransCatAcctMatched(idCat, bUnconAcct)) {
       throw new Error(getTrans().INVALID_ESTIMATED_COST_ACCOUNT());
     }
+
+    //(5) Entity Bank Validation
+    getMissingEntityBankLineNumbers(firstRowData, transactionCat);
 
     //(1) Department / Project validation
     assertDeptLines(billRows);

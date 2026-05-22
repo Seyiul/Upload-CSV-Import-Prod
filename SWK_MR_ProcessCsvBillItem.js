@@ -135,6 +135,12 @@ define([
 
     setBodyTextIfPresent(
       rec,
+      "custbody_15529_vendor_entity_bank",
+      firstRowData["Entity Bank"],
+    );
+
+    setBodyTextIfPresent(
+      rec,
       FIELD_PROJECT_BODY,
       firstRowData["Project(Main, Single)"],
     );
@@ -471,20 +477,20 @@ define([
     }
 
     // 임시로 저장한 파일 삭제
-    if (stagingFileId) {
-      try {
-        file.delete({ id: stagingFileId });
-        log.debug("summarize", "Deleted staging file: " + stagingFileId);
-      } catch (deleteError) {
-        log.error(
-          "summarize",
-          "Failed to delete staging file " +
-            stagingFileId +
-            ": " +
-            deleteError.message,
-        );
-      }
-    }
+    // if (stagingFileId) {
+    //   try {
+    //     file.delete({ id: stagingFileId });
+    //     log.debug("summarize", "Deleted staging file: " + stagingFileId);
+    //   } catch (deleteError) {
+    //     log.error(
+    //       "summarize",
+    //       "Failed to delete staging file " +
+    //         stagingFileId +
+    //         ": " +
+    //         deleteError.message,
+    //     );
+    //   }
+    // }
 
     log.audit(
       "summarize",

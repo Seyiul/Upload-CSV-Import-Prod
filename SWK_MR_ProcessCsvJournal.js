@@ -83,7 +83,13 @@ define([
       "trandate",
       parseDateValue(firstRowData["Date"]),
     );
-    setBodyTextIfPresent(rec, "subsidiary", firstRowData["Subsidiary"]);
+    setBodyTextIfPresent(
+      rec,
+      "subsidiary",
+      firstRowData["Subsidiary"] ||
+        firstRowData["\u4f1a\u793e\u540d"] ||
+        firstRowData["会社名"],
+    );
     setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
     setBodyValueIfPresent(
       rec,
@@ -153,7 +159,12 @@ define([
         "cseg_swk_lapopjt",
         rowData["Project(Line)"],
       );
-      setCurrentLineTextIfPresent(rec, "line", "taxcode", rowData["Tax"]);
+      setCurrentLineTextIfPresent(
+        rec,
+        "line",
+        "taxcode",
+        rowData["Tax"] || rowData["Tax Code"],
+      );
 
       rec.commitLine({ sublistId: "line" });
     });
@@ -384,20 +395,20 @@ define([
     }
 
     // 임시로 업로드한 파일 삭제
-    if (stagingFileId) {
-      try {
-        file.delete({ id: stagingFileId });
-        log.debug("summarize", "Deleted staging file: " + stagingFileId);
-      } catch (deleteError) {
-        log.error(
-          "summarize",
-          "Failed to delete staging file " +
-            stagingFileId +
-            ": " +
-            deleteError.message,
-        );
-      }
-    }
+    // if (stagingFileId) {
+    //   try {
+    //     file.delete({ id: stagingFileId });
+    //     log.debug("summarize", "Deleted staging file: " + stagingFileId);
+    //   } catch (deleteError) {
+    //     log.error(
+    //       "summarize",
+    //       "Failed to delete staging file " +
+    //         stagingFileId +
+    //         ": " +
+    //         deleteError.message,
+    //     );
+    //   }
+    // }
 
     log.audit(
       "summarize",

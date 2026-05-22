@@ -79,6 +79,7 @@ define(["N/translation"], (translation) => {
     "MISSING_EXTERNAL_ID",
     "CSV_NO_DATA_ROWS",
     "CSV_NO_MAPPED_HEADERS",
+    "MISSING_ENTITY_BANK",
   ];
 
   let cachedMessages = null;

@@ -12,6 +12,7 @@ define([], () => {
 
   const RESULT_SUMMARY_PREFIX = "swk_mr_summary_";
   const RESULT_ERROR_PREFIX = "swk_mr_errors_";
+  const RESULT_FOLDER_ID_PARAM = "custscript_swk_csv_result_folder_id";
 
   const TRANSACTION_TYPES = {
     PO: "PO",
@@ -128,8 +129,6 @@ define([], () => {
       "Department(Line)",
       "Project(Line)",
       ["Project(Seg)", "Project(seg)"],
-      "Groupware Approval Multiple Link",
-      "Groupware Approval Link",
     ],
     BILL: [
       "External ID",
@@ -160,8 +159,7 @@ define([], () => {
       "Project(Main, Single)",
       "Apply WHT",
       "Residual",
-      "Groupware Approval Multiple Link",
-      "Groupware Approval Link",
+      "Entity Bank",
     ],
     BILL_ITEM: [
       "External ID",
@@ -196,8 +194,7 @@ define([], () => {
       "Amort. Start",
       "Amort. End",
       "Residual",
-      "Groupware Approval Multiple Link",
-      "Groupware Approval Link",
+      "Entity Bank",
     ],
     INVOICE: [
       ["External ID", "EXTERNAL ID"],
@@ -224,13 +221,11 @@ define([], () => {
       "Department(Line)",
       "Project(Line)",
       "Project(seg)",
-      "Groupware Approval Multiple Link",
-      "Groupware Approval Link",
     ],
     JOURNAL: [
       "External ID",
       "Date",
-      "Subsidiary",
+      ["Subsidiary", "\u4f1a\u793e\u540d"],
       "Memo",
       "Reversal Date",
       "Currency",
@@ -243,7 +238,7 @@ define([], () => {
       "Name",
       "Memo(line)",
       "Project(Line)",
-      "Tax",
+      ["Tax", "Tax Code"],
     ],
   };
 
@@ -253,6 +248,7 @@ define([], () => {
     ACTIONS,
     RESULT_SUMMARY_PREFIX,
     RESULT_ERROR_PREFIX,
+    RESULT_FOLDER_ID_PARAM,
     TRANSACTION_TYPES,
     TEMPLATE_FILE_ID_PARAMS,
     TRANSACTION_CONFIG,

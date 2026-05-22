@@ -40,6 +40,7 @@ define([
     SUITELET_DEPLOYMENT_ID,
     ACTIONS,
     RESULT_SUMMARY_PREFIX,
+    RESULT_FOLDER_ID_PARAM,
     TEMPLATE_FILE_ID_PARAMS,
     TRANSACTION_CONFIG,
   } = uploadCsvConstants;
@@ -67,6 +68,14 @@ define([
       deploymentId: SUITELET_DEPLOYMENT_ID,
       params: params || {},
     });
+
+  const getResultFolderId = (fallbackFolderId) => {
+    const resultFolderId = runtime.getCurrentScript().getParameter({
+      name: RESULT_FOLDER_ID_PARAM,
+    });
+
+    return resultFolderId || fallbackFolderId;
+  };
 
   const getTemplateName = (transactionType, trans) => {
     const templateNames = {
@@ -143,8 +152,7 @@ define([
       label: trans.TEMPLATE(),
       container: "custpage_group_template_download",
     });
-    templateNameField.defaultValue =
-      getTemplateName(transactionType, trans);
+    templateNameField.defaultValue = getTemplateName(transactionType, trans);
     templateNameField.updateDisplayType({
       displayType: serverWidget.FieldDisplayType.INLINE,
     });
@@ -599,7 +607,7 @@ define([
       const stagingFileId = saveStagingFile(
         uploadedFile,
         transactionType,
-        templateFile.folder,
+        getResultFolderId(templateFile.folder),
       );
 
       log.debug(
