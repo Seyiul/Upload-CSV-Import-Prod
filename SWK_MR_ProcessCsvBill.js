@@ -8,6 +8,7 @@
  * ----------- -------------   --------------    --------------------------------------
  * 1.00         2026-04-13        Seulyi           Initial development
  * 1.01         2026-04-21        Seulyi           Added header validation and error handling improvements
+ * 1.02         2026-05-20        Seulyi           Add Upload Option (Add/Update/Upsert) and related logic in map/reduce functions
  *
  */
 define([
@@ -15,6 +16,7 @@ define([
   "N/log",
   "N/record",
   "N/runtime",
+  "N/search",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
   "./SWK_Utils_ValidationCheck",
@@ -24,6 +26,7 @@ define([
   log,
   record,
   runtime,
+  search,
   csvUtils,
   uploadCsvConstants,
   validCheck,
@@ -31,6 +34,7 @@ define([
 ) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type";
+  const UPLOAD_OPTION_PARAM = "custscript_swk_csv_upload_option";
   const {
     RECORD_TYPES,
     REQUIRED_CSV_HEADERS,
@@ -75,14 +79,7 @@ define([
     return normalizedValue === "T" || normalizedValue === "TRUE";
   };
 
-  const createBillRecord = (billRows) => {
-    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
-
-    // Body 필드 매핑
-    const rec = record.create({
-      type: record.Type.VENDOR_BILL,
-      isDynamic: true,
-    });
+  const setBillBodyFields = (rec, firstRowData) => {
     const locationId = findLocationIdByValue(firstRowData["Location"]);
 
     if (firstRowData["Location"] && !locationId) {
@@ -131,7 +128,11 @@ define([
       "custbody_swk_transcategory",
       firstRowData["Transaction Category"],
     );
-
+    setBodyTextIfPresent(
+      rec,
+      "custbody_15529_vendor_entity_bank",
+      firstRowData["Entity Bank"],
+    );
     setBodyTextIfPresent(
       rec,
       "custbody_15529_vendor_entity_bank",
@@ -155,8 +156,10 @@ define([
       formatRichText(firstRowData["Groupware Approval Multiple Link"]),
     );
 
-    doPurchaseLinesValidations(billRows);
+    return locationId;
+  };
 
+  const addBillExpenseLines = (rec, billRows, locationId) => {
     // CSV의 각 행을 Vendor Bill의 Expense 라인으로 매핑
     (billRows || []).forEach((row) => {
       const rowData = row.rowData || {};
@@ -246,8 +249,101 @@ define([
       );
       rec.commitLine({ sublistId: "expense" });
     });
+  };
+
+  const createBillRecord = (billRows) => {
+    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+
+    // Body 필드 매핑
+    const rec = record.create({
+      type: record.Type.VENDOR_BILL,
+      isDynamic: true,
+    });
+    const locationId = setBillBodyFields(rec, firstRowData);
+
+    doPurchaseLinesValidations(billRows);
+    addBillExpenseLines(rec, billRows, locationId);
 
     return rec.save();
+  };
+
+  const findBillIdByExternalId = (externalId) => {
+    if (!externalId) {
+      return null;
+    }
+
+    const results = search
+      .create({
+        type: record.Type.VENDOR_BILL,
+        filters: [["externalidstring", "is", String(externalId)]],
+        columns: ["internalid"],
+      })
+      .run()
+      .getRange({ start: 0, end: 1 });
+
+    if (!results || results.length === 0) {
+      return null;
+    }
+
+    return results[0].getValue({ name: "internalid" });
+  };
+
+  const removeExpenseLines = (rec) => {
+    const lineCount = rec.getLineCount({ sublistId: "expense" });
+
+    for (let line = lineCount - 1; line >= 0; line -= 1) {
+      rec.removeLine({
+        sublistId: "expense",
+        line: line,
+        ignoreRecalc: true,
+      });
+    }
+  };
+
+  const updateBillRecord = (billRows, existingBillId) => {
+    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+    const rec = record.load({
+      type: record.Type.VENDOR_BILL,
+      id: existingBillId,
+      isDynamic: true,
+    });
+    const locationId = setBillBodyFields(rec, firstRowData);
+
+    doPurchaseLinesValidations(billRows);
+    removeExpenseLines(rec);
+    addBillExpenseLines(rec, billRows, locationId);
+
+    return rec.save();
+  };
+
+  const submitBillRecord = (billRows, uploadOption) => {
+    const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
+    const externalId = firstRowData["External ID"];
+    const normalizedUploadOption = uploadOption || "ADD";
+    const existingBillId =
+      normalizedUploadOption === "ADD"
+        ? null
+        : findBillIdByExternalId(externalId);
+
+    if (normalizedUploadOption === "ADD") {
+      return createBillRecord(billRows);
+    }
+
+    if (normalizedUploadOption === "UPDATE") {
+      if (!existingBillId) {
+        throw new Error("Vendor Bill not found for External ID: " + externalId);
+      }
+
+      return updateBillRecord(billRows, existingBillId);
+    }
+
+    if (normalizedUploadOption === "UPSERT") {
+      return existingBillId
+        ? updateBillRecord(billRows, existingBillId)
+        : createBillRecord(billRows);
+    }
+
+    throw new Error("Unsupported upload option: " + normalizedUploadOption);
   };
 
   const loadStagedRows = (fileId, transactionType) => {
@@ -284,6 +380,9 @@ define([
     const transactionType = script.getParameter({
       name: TRANSACTION_TYPE_PARAM,
     });
+    const uploadOption = script.getParameter({
+      name: UPLOAD_OPTION_PARAM,
+    });
     const recordType = RECORD_TYPES[transactionType];
 
     if (!fileId) {
@@ -303,6 +402,7 @@ define([
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
+      uploadOption: uploadOption,
       recordType: recordType,
       rowData: row.rowData || {},
     }));
@@ -337,10 +437,14 @@ define([
 
   const reduce = (reduceContext) => {
     const billRows = reduceContext.values.map((value) => JSON.parse(value));
+    const firstValue = reduceContext.values[0]
+      ? JSON.parse(reduceContext.values[0])
+      : {};
+    const uploadOption = firstValue.uploadOption || "ADD";
 
     try {
-      const recordId = createBillRecord(billRows);
-
+      let recordId = "";
+      recordId = submitBillRecord(billRows, uploadOption);
       reduceContext.write({
         key: "success",
         value: JSON.stringify({

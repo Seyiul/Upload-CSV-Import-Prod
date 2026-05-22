@@ -39,6 +39,7 @@ define([], () => {
         params: {
           fileId: "custscript_swk_csv_file_id_po",
           transactionType: "custscript_swk_csv_tran_type_po",
+          uploadOption: "custscript_swk_csv_upload_option_po",
         },
       },
     },
@@ -50,6 +51,7 @@ define([], () => {
         params: {
           fileId: "custscript_swk_csv_file_id",
           transactionType: "custscript_swk_csv_tran_type",
+          uploadOption: "custscript_swk_csv_upload_option",
         },
       },
     },
@@ -61,6 +63,7 @@ define([], () => {
         params: {
           fileId: "custscript_swk_csv_file_id_billitem",
           transactionType: "custscript_swk_csv_tran_type_billitem",
+          uploadOption: "custscript_swk_csv_upload_option_item",
         },
       },
     },
@@ -72,6 +75,7 @@ define([], () => {
         params: {
           fileId: "custscript_swk_csv_file_id_iv",
           transactionType: "custscript_swk_csv_tran_type_iv",
+          uploadOption: "custscript_swk_csv_upload_option_iv",
         },
       },
     },
@@ -83,6 +87,7 @@ define([], () => {
         params: {
           fileId: "custscript_swk_csv_file_id_jn",
           transactionType: "custscript_swk_csv_tran_type_jn",
+          uploadOption: "custscript_swk_csv_upload_option_jn",
         },
       },
     },
@@ -159,6 +164,11 @@ define([], () => {
       "Project(Main, Single)",
       "Apply WHT",
       "Residual",
+<<<<<<< HEAD
+=======
+      "Groupware Approval Multiple Link",
+      "Groupware Approval Link",
+>>>>>>> d910ad39da583128b61894a9c996de36bcfb050b
       "Entity Bank",
     ],
     BILL_ITEM: [
@@ -194,6 +204,11 @@ define([], () => {
       "Amort. Start",
       "Amort. End",
       "Residual",
+<<<<<<< HEAD
+=======
+      "Groupware Approval Multiple Link",
+      "Groupware Approval Link",
+>>>>>>> d910ad39da583128b61894a9c996de36bcfb050b
       "Entity Bank",
     ],
     INVOICE: [
