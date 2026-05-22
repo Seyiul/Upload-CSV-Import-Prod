@@ -100,6 +100,12 @@ define([
       "custbody_swk_bill_vendorqual",
       parseCheckboxValue(firstRowData["Qualified Invoice Issuer"]),
     );
+
+    setBodyTextIfPresent(
+      rec,
+      "custbody_swk_bill_wht",
+      firstRowData["WHT Category"],
+    );
     setBodyValueIfPresent(
       rec,
       "custbody_swk_wht_update",
