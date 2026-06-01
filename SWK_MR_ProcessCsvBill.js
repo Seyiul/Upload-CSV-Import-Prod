@@ -9,6 +9,7 @@
  * 1.00         2026-04-13        Seulyi           Initial development
  * 1.01         2026-04-21        Seulyi           Added header validation and error handling improvements
  * 1.02         2026-05-20        Seulyi           Add Upload Option (Add/Update/Upsert) and related logic in map/reduce functions
+ * 1.03         2026-06-01        Seulyi           Updated to handle specific transaction categories
  *
  */
 define([
@@ -122,7 +123,32 @@ define([
     setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
     setBodyTextIfPresent(rec, "department", firstRowData["Department"]);
     setBodyValueIfPresent(rec, "location", locationId);
-    setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
+
+    // 26-06-01
+    // (1) Transaction Category : 예정 원가 - term을 입력하지않음
+    // (2) Transaction Category : 예정 원가 - due date가 입력된 경우 에러 발생
+    const transactionCategory = firstRowData["Transaction Category"];
+    const dueDate = firstRowData["Due Date"];
+    if (
+      ![
+        "예정 원가/매출 - 취소",
+        "예정 원가/매출 -",
+        "予定原価/売上",
+        "予定原価/売上－取消",
+      ].includes(transactionCategory)
+    ) {
+      setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
+    } else {
+      if (hasValue(dueDate)) {
+        throw new Error(
+          "Due Date should be empty when Transaction Category is " +
+            transactionCategory,
+        );
+      }
+    }
+
+    setBodyValueIfPresent(rec, "duedate", parseDateValue(dueDate));
+
     setBodyTextIfPresent(
       rec,
       "custbody_swk_transcategory",
@@ -133,12 +159,6 @@ define([
       "custbody_15529_vendor_entity_bank",
       firstRowData["Entity Bank"],
     );
-    setBodyTextIfPresent(
-      rec,
-      "custbody_15529_vendor_entity_bank",
-      firstRowData["Entity Bank"],
-    );
-
     setBodyTextIfPresent(
       rec,
       FIELD_PROJECT_BODY,
