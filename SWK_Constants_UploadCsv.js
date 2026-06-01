@@ -164,11 +164,6 @@ define([], () => {
       "Project(Main, Single)",
       "Apply WHT",
       "Residual",
-<<<<<<< HEAD
-=======
-      "Groupware Approval Multiple Link",
-      "Groupware Approval Link",
->>>>>>> d910ad39da583128b61894a9c996de36bcfb050b
       "Entity Bank",
     ],
     BILL_ITEM: [
@@ -204,11 +199,6 @@ define([], () => {
       "Amort. Start",
       "Amort. End",
       "Residual",
-<<<<<<< HEAD
-=======
-      "Groupware Approval Multiple Link",
-      "Groupware Approval Link",
->>>>>>> d910ad39da583128b61894a9c996de36bcfb050b
       "Entity Bank",
     ],
     INVOICE: [
