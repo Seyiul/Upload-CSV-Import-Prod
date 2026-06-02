@@ -213,7 +213,7 @@ define([
     const UploadOptionField = form.addField({
       id: "custpage_upload_option",
       type: serverWidget.FieldType.SELECT,
-      label: "Upload Option",
+      label: trans.UPLOAD_OPTION_LABEL(),
       container: "custpage_group_upload_options",
     });
 
@@ -221,15 +221,15 @@ define([
 
     UploadOptionField.addSelectOption({
       value: "ADD",
-      text: "Add",
+      text: trans.ADD(),
     });
     UploadOptionField.addSelectOption({
       value: "UPDATE",
-      text: "Update",
+      text: trans.UPDATE(),
     });
     UploadOptionField.addSelectOption({
       value: "UPSERT",
-      text: "Add or Update",
+      text: trans.ADD_OR_UPDATE(),
     });
 
     // Map/Reduce Task ID와 Staging File ID를 저장하는 숨겨진 필드 START
@@ -450,7 +450,9 @@ define([
 
     const stagingFile = file.create({
       name:
-        (uploadedFile.name || `upload_${Date.now()}`).replace(/\.csv$/i, "") +
+        (uploadedFile.name || "upload").replace(/\.csv$/i, "") +
+        "_" +
+        Date.now() +
         ".json",
       fileType: file.Type.PLAINTEXT,
       contents: csvUtils.encodeUnicodeEscapes(JSON.stringify(stagingRows)),
@@ -477,15 +479,22 @@ define([
       return null;
     }
 
+    const mrParams = {
+      [taskConfig.params.fileId]: stagingFileId,
+      [taskConfig.params.transactionType]: transactionType,
+      [taskConfig.params.uploadOption]: uploadOption,
+    };
+
+    log.debug(
+      "submitProcessingTask params",
+      `scriptId=${taskConfig.scriptId}, deploymentId=${taskConfig.deploymentId}, params=${JSON.stringify(mrParams)}`,
+    );
+
     const mrTask = task.create({
       taskType: task.TaskType.MAP_REDUCE,
       scriptId: taskConfig.scriptId,
       deploymentId: taskConfig.deploymentId,
-      params: {
-        [taskConfig.params.fileId]: stagingFileId,
-        [taskConfig.params.transactionType]: transactionType,
-        [taskConfig.params.uploadOption]: uploadOption,
-      },
+      params: mrParams,
     });
 
     return mrTask.submit();

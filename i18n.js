@@ -81,6 +81,10 @@ define(["N/translation"], (translation) => {
     "CSV_NO_DATA_ROWS",
     "CSV_NO_MAPPED_HEADERS",
     "MISSING_ENTITY_BANK",
+    "ADD",
+    "UPDATE",
+    "ADD_OR_UPDATE",
+    "UPLOAD_OPTION_LABEL",
   ];
 
   let cachedMessages = null;
