@@ -126,13 +126,38 @@ define([
     setBodyTextIfPresent(rec, "account", firstRowData["Account"]);
     setBodyTextIfPresent(rec, "department", firstRowData["Department"]);
     setBodyValueIfPresent(rec, "location", locationId);
-    setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
-    setBodyValueIfPresent(
-      rec,
-      "duedate",
-      parseDateValue(firstRowData["Due Date"]),
-    );
     setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
+
+    // 26-06-01
+    // (1) Transaction Category : 예정 원가 - term을 입력하지않음
+    // (2) Transaction Category : 예정 원가 - due date가 입력된 경우 에러 발생
+    const transactionCategory = firstRowData["Transaction Category"];
+    const dueDate = firstRowData["Due Date"];
+    if (
+      ![
+        "예정 원가/매출 - 취소",
+        "예정 원가/매출",
+        "予定原価/売上",
+        "予定原価/売上－取消",
+      ].includes(transactionCategory)
+    ) {
+      setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
+    } else {
+      rec.setText({
+        fieldId: "terms",
+        text: "",
+      });
+      setBodyValueIfPresent(rec, "duedate", parseDateValue(dueDate));
+    }
+
+    // else {
+    //   if (hasValue(dueDate)) {
+    //     throw new Error(
+    //       `取引カテゴリが${transactionCategory}の場合、支払期日は入力できません。`,
+    //     );
+    //   }
+    // }
+
     setBodyTextIfPresent(
       rec,
       "custbody_swk_transcategory",

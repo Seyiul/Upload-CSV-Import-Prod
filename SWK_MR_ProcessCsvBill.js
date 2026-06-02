@@ -132,22 +132,26 @@ define([
     if (
       ![
         "예정 원가/매출 - 취소",
-        "예정 원가/매출 -",
+        "예정 원가/매출",
         "予定原価/売上",
         "予定原価/売上－取消",
       ].includes(transactionCategory)
     ) {
       setBodyTextIfPresent(rec, "terms", firstRowData["Terms"]);
     } else {
-      if (hasValue(dueDate)) {
-        throw new Error(
-          "Due Date should be empty when Transaction Category is " +
-            transactionCategory,
-        );
-      }
+      rec.setText({
+        fieldId: "terms",
+        text: "",
+      });
+      setBodyValueIfPresent(rec, "duedate", parseDateValue(dueDate));
     }
-
-    setBodyValueIfPresent(rec, "duedate", parseDateValue(dueDate));
+    // else {
+    //   if (hasValue(dueDate)) {
+    //     throw new Error(
+    //       `取引カテゴリが${transactionCategory}の場合、支払期日は入力できません。`,
+    //     );
+    //   }
+    // }
 
     setBodyTextIfPresent(
       rec,

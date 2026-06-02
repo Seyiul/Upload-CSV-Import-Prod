@@ -120,7 +120,7 @@ define([
       terms !== "口座引落(Direct debit)" &&
       ![
         "예정 원가/매출 - 취소",
-        "예정 원가/매출 -",
+        "예정 원가/매출",
         "予定原価/売上",
         "予定原価/売上－取消",
       ].includes(transactionCat)
@@ -567,13 +567,21 @@ define([
       Amort. Schedule, Amort. Start, Amort. End
 
     (5) Terms != 海外送金(Overseas remittance),口座引落(Direct debit) && Transaction Category != 예정 원가/매출 - 취소,예정 원가/매출 - 경우에는 Entity Bank 필드가 입력되어야 함
+
+    (6) Memo 필수필드
 */
   const doPurchaseLinesValidations = (billRows) => {
     const firstRowData = (billRows && billRows[0] && billRows[0].rowData) || {};
 
     const transactionCat = firstRowData["Transaction Category"];
+    const memo = firstRowData["Memo"];
+
     if (!transactionCat) {
       throw new Error(getTrans().MISSING_TRANSACTION_CATEGORY());
+    }
+
+    if (!memo) {
+      throw new Error(getTrans().MISSING_MEMO());
     }
 
     const idCat = resolveInternalId(
