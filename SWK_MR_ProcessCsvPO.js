@@ -14,6 +14,7 @@ define([
   "N/log",
   "N/record",
   "N/runtime",
+  "N/search",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
   "./SWK_Utils_ValidationCheck",
@@ -23,6 +24,7 @@ define([
   log,
   record,
   runtime,
+  search,
   csvUtils,
   uploadCsvConstants,
   validCheck,
@@ -30,6 +32,7 @@ define([
 ) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_po";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_po";
+  const UPLOAD_OPTION_PARAM = "custscript_swk_csv_upload_option_po";
   const {
     RECORD_TYPES,
     REQUIRED_CSV_HEADERS,
@@ -66,13 +69,29 @@ define([
   const FIELD_PROJECT_LINE = "custcol_swk_project_line";
   const FIELD_PROJECT_SEG = "cseg_swk_lapopjt";
 
-  const createPurchaseOrderRecord = (poRows) => {
-    const firstRowData = (poRows && poRows[0] && poRows[0].rowData) || {};
-    const rec = record.create({
-      type: record.Type.PURCHASE_ORDER,
-      isDynamic: true,
-    });
+  const findPurchaseOrderIdByExternalId = (externalId) => {
+    if (!externalId) {
+      return null;
+    }
 
+    const results = search
+      .create({
+        type: record.Type.PURCHASE_ORDER,
+        filters: [["externalidstring", "is", String(externalId)]],
+        columns: ["internalid"],
+      })
+      .run()
+      .getRange({ start: 0, end: 1 });
+
+    if (!results || results.length === 0) {
+      return null;
+    }
+
+    return results[0].getValue({ name: "internalid" });
+  };
+
+  const populatePurchaseOrderRecord = (rec, poRows) => {
+    const firstRowData = (poRows && poRows[0] && poRows[0].rowData) || {};
     // body 필드 매핑
     const locationId = findLocationIdByValue(firstRowData["Location"]);
 
@@ -195,7 +214,75 @@ define([
       );
       rec.commitLine({ sublistId: "item" });
     });
+  };
+
+  const removeItemLines = (rec) => {
+    const lineCount = rec.getLineCount({ sublistId: "item" });
+
+    for (let line = lineCount - 1; line >= 0; line -= 1) {
+      rec.removeLine({
+        sublistId: "item",
+        line: line,
+        ignoreRecalc: true,
+      });
+    }
+  };
+
+  const createPurchaseOrderRecord = (poRows) => {
+    const rec = record.create({
+      type: record.Type.PURCHASE_ORDER,
+      isDynamic: true,
+    });
+
+    populatePurchaseOrderRecord(rec, poRows);
+
     return rec.save();
+  };
+
+  const updatePurchaseOrderRecord = (poRows, existingPurchaseOrderId) => {
+    const rec = record.load({
+      type: record.Type.PURCHASE_ORDER,
+      id: existingPurchaseOrderId,
+      isDynamic: true,
+    });
+
+    removeItemLines(rec);
+    populatePurchaseOrderRecord(rec, poRows);
+
+    return rec.save();
+  };
+
+  const submitPurchaseOrderRecord = (poRows, uploadOption) => {
+    const firstRowData = (poRows && poRows[0] && poRows[0].rowData) || {};
+    const externalId =
+      firstRowData["External ID"] || firstRowData["EXTERNAL ID"];
+    const normalizedUploadOption = uploadOption || "ADD";
+    const existingPurchaseOrderId =
+      normalizedUploadOption === "ADD"
+        ? null
+        : findPurchaseOrderIdByExternalId(externalId);
+
+    if (normalizedUploadOption === "ADD") {
+      return createPurchaseOrderRecord(poRows);
+    }
+
+    if (normalizedUploadOption === "UPDATE") {
+      if (!existingPurchaseOrderId) {
+        throw new Error(
+          "Purchase Order not found for External ID: " + externalId,
+        );
+      }
+
+      return updatePurchaseOrderRecord(poRows, existingPurchaseOrderId);
+    }
+
+    if (normalizedUploadOption === "UPSERT") {
+      return existingPurchaseOrderId
+        ? updatePurchaseOrderRecord(poRows, existingPurchaseOrderId)
+        : createPurchaseOrderRecord(poRows);
+    }
+
+    throw new Error("Unsupported upload option: " + normalizedUploadOption);
   };
 
   // CSV 파일에서 데이터를 읽어와 Map/Reduce의 입력 데이터로 반환하는 함수
@@ -233,6 +320,9 @@ define([
     const transactionType = script.getParameter({
       name: TRANSACTION_TYPE_PARAM,
     });
+    const uploadOption = script.getParameter({
+      name: UPLOAD_OPTION_PARAM,
+    });
     const recordType = RECORD_TYPES[transactionType];
 
     if (!fileId) {
@@ -252,6 +342,7 @@ define([
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
+      uploadOption: uploadOption,
       recordType: recordType,
       rowData: row.rowData || {},
     }));
@@ -286,9 +377,13 @@ define([
 
   const reduce = (reduceContext) => {
     const poRows = reduceContext.values.map((value) => JSON.parse(value));
+    const firstValue = reduceContext.values[0]
+      ? JSON.parse(reduceContext.values[0])
+      : {};
+    const uploadOption = firstValue.uploadOption || "ADD";
 
     try {
-      const recordId = createPurchaseOrderRecord(poRows);
+      const recordId = submitPurchaseOrderRecord(poRows, uploadOption);
 
       reduceContext.write({
         key: "success",

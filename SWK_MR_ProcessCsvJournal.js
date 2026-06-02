@@ -135,11 +135,11 @@ define([
         firstRowData["会社名"],
     );
     setBodyValueIfPresent(rec, "memo", firstRowData["Memo"]);
-    setBodyValueIfPresent(
-      rec,
-      "reversaldate",
-      parseDateValue(firstRowData["Reversal Date"]),
-    );
+
+    rec.setValue({
+      fieldId: "reversaldate",
+      value: parseDateValue(firstRowData["Reversal Date"]),
+    });
     setBodyTextIfPresent(rec, "currency", firstRowData["Currency"]);
     setBodyTextIfPresent(
       rec,

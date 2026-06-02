@@ -15,6 +15,7 @@ define([
   "N/log",
   "N/record",
   "N/runtime",
+  "N/search",
   "./SWK_Utils_UploadCsvFiles",
   "./SWK_Constants_UploadCsv",
   "./SWK_Utils_ValidationCheck",
@@ -24,6 +25,7 @@ define([
   log,
   record,
   runtime,
+  search,
   csvUtils,
   uploadCsvConstants,
   validCheck,
@@ -31,6 +33,7 @@ define([
 ) => {
   const CSV_FILE_ID_PARAM = "custscript_swk_csv_file_id_iv";
   const TRANSACTION_TYPE_PARAM = "custscript_swk_csv_tran_type_iv";
+  const UPLOAD_OPTION_PARAM = "custscript_swk_csv_upload_option_iv";
   const {
     RECORD_TYPES,
     REQUIRED_CSV_HEADERS,
@@ -67,13 +70,29 @@ define([
   const FIELD_PROJECT_LINE = "custcol_swk_project_line";
   const FIELD_PROJECT_SEG = "cseg_swk_lapopjt";
 
-  const createInvoiceRecord = (invRows) => {
-    const firstRowData = (invRows && invRows[0] && invRows[0].rowData) || {};
-    const rec = record.create({
-      type: record.Type.INVOICE,
-      isDynamic: true,
-    });
+  const findInvoiceIdByExternalId = (externalId) => {
+    if (!externalId) {
+      return null;
+    }
 
+    const results = search
+      .create({
+        type: record.Type.INVOICE,
+        filters: [["externalidstring", "is", String(externalId)]],
+        columns: ["internalid"],
+      })
+      .run()
+      .getRange({ start: 0, end: 1 });
+
+    if (!results || results.length === 0) {
+      return null;
+    }
+
+    return results[0].getValue({ name: "internalid" });
+  };
+
+  const populateInvoiceRecord = (rec, invRows) => {
+    const firstRowData = (invRows && invRows[0] && invRows[0].rowData) || {};
     // Body 필드 매핑
     const locationId = findLocationIdByValue(firstRowData["Location"]);
 
@@ -186,7 +205,73 @@ define([
       );
       rec.commitLine({ sublistId: "item" });
     });
+  };
+
+  const removeItemLines = (rec) => {
+    const lineCount = rec.getLineCount({ sublistId: "item" });
+
+    for (let line = lineCount - 1; line >= 0; line -= 1) {
+      rec.removeLine({
+        sublistId: "item",
+        line: line,
+        ignoreRecalc: true,
+      });
+    }
+  };
+
+  const createInvoiceRecord = (invRows) => {
+    const rec = record.create({
+      type: record.Type.INVOICE,
+      isDynamic: true,
+    });
+
+    populateInvoiceRecord(rec, invRows);
+
     return rec.save();
+  };
+
+  const updateInvoiceRecord = (invRows, existingInvoiceId) => {
+    const rec = record.load({
+      type: record.Type.INVOICE,
+      id: existingInvoiceId,
+      isDynamic: true,
+    });
+
+    removeItemLines(rec);
+    populateInvoiceRecord(rec, invRows);
+
+    return rec.save();
+  };
+
+  const submitInvoiceRecord = (invRows, uploadOption) => {
+    const firstRowData = (invRows && invRows[0] && invRows[0].rowData) || {};
+    const externalId =
+      firstRowData["External ID"] || firstRowData["EXTERNAL ID"];
+    const normalizedUploadOption = uploadOption || "ADD";
+    const existingInvoiceId =
+      normalizedUploadOption === "ADD"
+        ? null
+        : findInvoiceIdByExternalId(externalId);
+
+    if (normalizedUploadOption === "ADD") {
+      return createInvoiceRecord(invRows);
+    }
+
+    if (normalizedUploadOption === "UPDATE") {
+      if (!existingInvoiceId) {
+        throw new Error("Invoice not found for External ID: " + externalId);
+      }
+
+      return updateInvoiceRecord(invRows, existingInvoiceId);
+    }
+
+    if (normalizedUploadOption === "UPSERT") {
+      return existingInvoiceId
+        ? updateInvoiceRecord(invRows, existingInvoiceId)
+        : createInvoiceRecord(invRows);
+    }
+
+    throw new Error("Unsupported upload option: " + normalizedUploadOption);
   };
 
   // CSV 파일에서 데이터를 읽어와 Map/Reduce의 입력 데이터로 반환하는 함수
@@ -224,6 +309,9 @@ define([
     const transactionType = script.getParameter({
       name: TRANSACTION_TYPE_PARAM,
     });
+    const uploadOption = script.getParameter({
+      name: UPLOAD_OPTION_PARAM,
+    });
     const recordType = RECORD_TYPES[transactionType];
 
     if (!fileId) {
@@ -243,6 +331,7 @@ define([
     return stagedRows.map((row) => ({
       lineNumber: row.lineNumber,
       transactionType: row.transactionType || transactionType,
+      uploadOption: uploadOption,
       recordType: recordType,
       rowData: row.rowData || {},
     }));
@@ -277,9 +366,13 @@ define([
 
   const reduce = (reduceContext) => {
     const invRows = reduceContext.values.map((value) => JSON.parse(value));
+    const firstValue = reduceContext.values[0]
+      ? JSON.parse(reduceContext.values[0])
+      : {};
+    const uploadOption = firstValue.uploadOption || "ADD";
 
     try {
-      const recordId = createInvoiceRecord(invRows);
+      const recordId = submitInvoiceRecord(invRows, uploadOption);
 
       reduceContext.write({
         key: "success",

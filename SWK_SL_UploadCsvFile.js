@@ -10,6 +10,7 @@
  */
 define([
   "N/ui/serverWidget",
+  "N/ui/message",
   "N/log",
   "N/file",
   "N/task",
@@ -23,6 +24,7 @@ define([
   "./i18n",
 ], (
   serverWidget,
+  message,
   log,
   file,
   task,
@@ -119,6 +121,12 @@ define([
       title: trans.TITLE(),
     });
     const transactionConfig = getTransactionConfig(transactionType) || {};
+
+    form.addPageInitMessage({
+      type: message.Type.INFORMATION,
+      title: "Notice",
+      message: "必須項目が不足している場合は、テンプレートをご確認ください。",
+    });
 
     form.addFieldGroup({
       id: "custpage_group_template_download",
