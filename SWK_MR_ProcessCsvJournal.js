@@ -151,6 +151,12 @@ define([
       "exchangerate",
       parseNumberValue(firstRowData["Exchange Rate"]),
     );
+
+    // 승인 상태 수정
+    rec.setValue({
+      fieldId: "approved",
+      value: false,
+    });
   };
 
   const addJnLines = (rec, journalRows) => {
