@@ -460,7 +460,9 @@ define([
   };
 
   const reduce = (reduceContext) => {
-    const billRows = reduceContext.values.map((value) => JSON.parse(value));
+    const billRows = reduceContext.values
+      .map((value) => JSON.parse(value))
+      .sort((a, b) => a.lineNumber - b.lineNumber);
     const firstValue = reduceContext.values[0]
       ? JSON.parse(reduceContext.values[0])
       : {};

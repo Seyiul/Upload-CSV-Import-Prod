@@ -365,7 +365,9 @@ define([
   };
 
   const reduce = (reduceContext) => {
-    const invRows = reduceContext.values.map((value) => JSON.parse(value));
+    const invRows = reduceContext.values
+      .map((value) => JSON.parse(value))
+      .sort((a, b) => a.lineNumber - b.lineNumber);
     const firstValue = reduceContext.values[0]
       ? JSON.parse(reduceContext.values[0])
       : {};
